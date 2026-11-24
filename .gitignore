@@ -1,0 +1,24 @@
+# Signing & secrets (NEVER commit!)
+*.jks
+*.keystore
+*.p12
+signing.properties
+
+# Local machine paths & IDE
+local.properties
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Gradle / Kotlin / Android build outputs
+.gradle/
+.kotlin/
+build/
+app/build/
+captures/
+.cxx/
+
+# Built APK binaries (distributed via GitHub Releases)
+*.apk
+*.aab
