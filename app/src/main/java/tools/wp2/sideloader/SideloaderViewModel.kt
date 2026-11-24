@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.annotation.StringRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -24,6 +25,7 @@ import tools.wp2.sideloader.wire.KSession
 import tools.wp2.sideloader.wire.LOADER_SLOT
 import tools.wp2.sideloader.wire.LoaderState
 import tools.wp2.sideloader.wire.PackageInspection
+import tools.wp2.sideloader.wire.WireError
 import tools.wp2.sideloader.wire.formatVersion
 import tools.wp2.sideloader.wire.inspectPackage
 import tools.wp2.sideloader.wire.install
@@ -98,12 +100,43 @@ class SideloaderViewModel(app: Application) : AndroidViewModel(app) {
     var scanError by mutableStateOf<String?>(null)
         private set
 
+    var availableUpdate by mutableStateOf<UpdateInfo?>(null)
+        private set
+
+    var checkingUpdate by mutableStateOf(false)
+        private set
+
     val logs = mutableStateListOf<String>()
 
     private var scanJob: Job? = null
 
     val isBusy: Boolean
         get() = watchStatus is WatchStatus.Connecting || transfer != null || removingSlot != null
+
+    init {
+        // Silently check GitHub Releases for a newer APK on startup
+        checkForUpdates(manual = false)
+    }
+
+    private fun str(@StringRes id: Int, vararg args: Any): String =
+        getApplication<Application>().getString(id, *args)
+
+    private fun localizeError(e: Throwable, @StringRes fallbackRes: Int): String = when (e) {
+        is BleError -> when (e.kind) {
+            BleError.Kind.OFF -> str(R.string.err_ble_off)
+            BleError.Kind.NO_WATCH -> str(R.string.err_ble_no_watch)
+            BleError.Kind.MISSING_GATT -> str(R.string.err_ble_missing_gatt)
+            BleError.Kind.DROPPED -> str(R.string.err_ble_dropped)
+            BleError.Kind.OTHER -> e.message ?: str(fallbackRes)
+        }
+        is InstallError.Busy -> str(R.string.err_install_busy)
+        is InstallError.NoFreeSlot -> str(R.string.err_install_no_slot, e.slots)
+        is InstallError.NotAPackage -> str(R.string.err_install_bad_pkg)
+        is InstallError.Refused -> str(R.string.err_install_refused, "%02X".format(e.status))
+        is WireError.NoApp -> str(R.string.err_wire_no_app)
+        is WireError.Refused -> str(R.string.err_wire_refused, "%02X".format(e.status))
+        else -> e.message ?: str(fallbackRes)
+    }
 
     fun log(msg: String) {
         val ts = synchronized(timeFmt) { timeFmt.format(Date()) }
@@ -119,6 +152,39 @@ class SideloaderViewModel(app: Application) : AndroidViewModel(app) {
         bannerError = null
     }
 
+    fun dismissUpdate() {
+        availableUpdate = null
+    }
+
+    fun checkForUpdates(manual: Boolean) {
+        if (checkingUpdate) return
+        checkingUpdate = true
+        if (manual) clearBanners()
+        viewModelScope.launch {
+            try {
+                val found = withContext(Dispatchers.IO) {
+                    UpdateChecker.checkLatest(BuildConfig.VERSION_NAME)
+                }
+                if (found != null) {
+                    availableUpdate = found
+                    log("Update available: v${found.latestVersion} (${found.downloadUrl})")
+                } else if (manual) {
+                    bannerSuccess = str(R.string.update_up_to_date, BuildConfig.VERSION_NAME)
+                    log("App is up to date (v${BuildConfig.VERSION_NAME})")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log("Update check failed: ${e.message}")
+                if (manual) {
+                    bannerError = str(R.string.update_check_failed, e.message ?: "network error")
+                }
+            } finally {
+                checkingUpdate = false
+            }
+        }
+    }
+
     fun selectManualWatch(device: DiscoveredWatch) {
         selectedAddress = device.address
         selectedWatchLabel = device.name
@@ -126,7 +192,7 @@ class SideloaderViewModel(app: Application) : AndroidViewModel(app) {
             .putString("watch_address", device.address)
             .putString("watch_name", device.name)
             .apply()
-        log("Выбраны часы: ${device.name} [${device.address}]")
+        log("Selected watch: ${device.name} [${device.address}]")
         connectAndRead(preferredAddress = device.address)
     }
 
@@ -149,8 +215,8 @@ class SideloaderViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                scanError = e.message ?: "Ошибка сканирования Bluetooth"
-                log("Ошибка сканирования: ${e.message}")
+                scanError = localizeError(e, R.string.err_scan_generic)
+                log("Scan error: ${e.message}")
             } finally {
                 scanningDevices = false
             }
@@ -180,7 +246,7 @@ class SideloaderViewModel(app: Application) : AndroidViewModel(app) {
 
                         var result = readLoader(session)
                         if (result == null && cached != null) {
-                            log("Кэшированный ключ не подошёл — запрашиваю свежий AT GETSECRET...")
+                            log("Cached key rejected — requesting fresh AT GETSECRET...")
                             val (fresh, newSecret) = KSession.open(link, secretHex = null, register = false)
                             if (newSecret != cached) {
                                 prefs.edit().putString(keyName, newSecret).apply()
@@ -201,19 +267,21 @@ class SideloaderViewModel(app: Application) : AndroidViewModel(app) {
                         .apply()
                 }
                 if (state == null) {
-                    log("Stub не ответил (стоковая прошивка или старый stub)")
+                    log("Stub did not respond (stock firmware or unsupported stub)")
                     watchStatus = WatchStatus.StockFirmware(name)
                 } else {
-                    log("Готово: Stub v${state.stub.version}, Loader=${state.loader?.crc?.let { "%08x".format(it) } ?: "нет"}, приложений=${state.apps.size}/${state.totalSlots}")
+                    log(
+                        "Ready: Stub v${state.stub.version}, Loader=${state.loader?.crc?.let { "%08x".format(it) } ?: "none"}, " +
+                            "apps=${state.apps.size}/${state.totalSlots}"
+                    )
                     watchStatus = WatchStatus.Ready(name, addr, state)
-                    // Reset manual slot if out of bounds for this stub
                     targetSlot?.let { if (it >= state.totalSlots) targetSlot = null }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                val msg = e.message ?: "Не удалось подключиться к часам"
-                log("Ошибка подключения: $msg")
+                val msg = localizeError(e, R.string.err_connect_generic)
+                log("Connect error: $msg")
                 watchStatus = WatchStatus.Error(msg)
             } finally {
                 link.disconnect()
@@ -230,13 +298,11 @@ class SideloaderViewModel(app: Application) : AndroidViewModel(app) {
                 val (fileName, bytes) = withContext(Dispatchers.IO) {
                     val name = queryFileName(ctx, uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "app.wp2app"
                     val stream = ctx.contentResolver.openInputStream(uri)
-                        ?: throw IllegalStateException("Не удалось открыть файл")
+                        ?: throw IllegalStateException(str(R.string.err_file_open))
                     stream.use { input ->
                         val data = input.readBytes()
                         if (data.size > MAX_FILE_BYTES) {
-                            throw IllegalArgumentException(
-                                "Файл слишком большой (${data.size / 1024} КБ). Пакет .wp2app не превышает 256 КБ."
-                            )
+                            throw IllegalArgumentException(str(R.string.err_file_too_large, data.size / 1024))
                         }
                         name to data
                     }
@@ -244,20 +310,20 @@ class SideloaderViewModel(app: Application) : AndroidViewModel(app) {
                 val inspection = inspectPackage(bytes)
                 if (inspection == null) {
                     selectedPackage = null
-                    fileError = "Файл «$fileName» не является пакетом .wp2app (нет заголовка WP2A)"
-                    log("Отклонён файл $fileName (${bytes.size} Б): не WP2A")
+                    fileError = str(R.string.err_not_wp2a, fileName)
+                    log("Rejected $fileName (${bytes.size} B): not WP2A")
                     return@launch
                 }
                 selectedPackage = SelectedPackage(fileName, bytes, inspection)
                 targetSlot = null
                 log(
-                    "Открыт пакет: $fileName → ${inspection.header.name} v${formatVersion(inspection.header.version)} " +
-                        "(${bytes.size} Б, ABI ${inspection.abiText}, CRC=${if (inspection.crcValid) "OK" else "BAD"})"
+                    "Loaded package: $fileName -> ${inspection.header.name} v${formatVersion(inspection.header.version)} " +
+                        "(${bytes.size} B, ABI ${inspection.abiText}, CRC=${if (inspection.crcValid) "OK" else "BAD"})"
                 )
             } catch (e: Exception) {
                 selectedPackage = null
-                fileError = e.message ?: "Не удалось прочитать файл"
-                log("Ошибка чтения файла: ${e.message}")
+                fileError = e.message ?: str(R.string.err_file_read)
+                log("File read error: ${e.message}")
             }
         }
     }
@@ -272,12 +338,12 @@ class SideloaderViewModel(app: Application) : AndroidViewModel(app) {
         val pkg = selectedPackage ?: return
         if (isBusy) return
         if (!pkg.inspection.crcValid) {
-            bannerError = "Контрольная сумма (CRC-32) файла повреждена — установка отменена"
+            bannerError = str(R.string.err_crc_corrupt)
             return
         }
         clearBanners()
         val total = pkg.bytes.size
-        transfer = TransferProgress(0f, 0, total, "Подключение к часам...")
+        transfer = TransferProgress(0f, 0, total, str(R.string.stage_connecting))
         val manualSlot = if (pkg.inspection.header.isLoader) null else targetSlot
 
         viewModelScope.launch {
@@ -287,15 +353,21 @@ class SideloaderViewModel(app: Application) : AndroidViewModel(app) {
                     withTimeout(120_000) {
                         link.connect(targetAddress = selectedAddress, scan = true)
                         withContext(Dispatchers.Main) {
-                            transfer = TransferProgress(0f, 0, total, "Авторизация (K-канал)...")
+                            transfer = TransferProgress(0f, 0, total, str(R.string.stage_auth))
                         }
                         val (session, secret) = KSession.open(link, secretHex = null, register = false)
                         prefs.edit().putString("k-${link.watchId}", secret).apply()
 
                         withContext(Dispatchers.Main) {
-                            transfer = TransferProgress(0f, 0, total, "Передача ${pkg.inspection.header.name}...")
+                            transfer = TransferProgress(
+                                0f,
+                                0,
+                                total,
+                                str(R.string.stage_sending_name, pkg.inspection.header.name),
+                            )
                         }
-                        log("Начинаю установку ${pkg.inspection.header.name} (${pkg.bytes.size} Б)...")
+                        log("Installing ${pkg.inspection.header.name} (${pkg.bytes.size} B)...")
+                        val sendingStage = str(R.string.stage_sending)
                         val slot = install(session, pkg.bytes, targetSlot = manualSlot) { p ->
                             val sent = (p * total).toInt().coerceIn(0, total)
                             viewModelScope.launch(Dispatchers.Main) {
@@ -303,12 +375,12 @@ class SideloaderViewModel(app: Application) : AndroidViewModel(app) {
                                     fraction = p.toFloat().coerceIn(0f, 1f),
                                     sentBytes = sent,
                                     totalBytes = total,
-                                    stage = "Передача на часы...",
+                                    stage = sendingStage,
                                 )
                             }
                         }
                         withContext(Dispatchers.Main) {
-                            transfer = TransferProgress(1f, total, total, "Обновление списка слотов...")
+                            transfer = TransferProgress(1f, total, total, str(R.string.stage_refreshing))
                         }
                         val freshState = readLoader(session)
                         val name = link.watchName ?: "CMF Watch Pro 2"
@@ -327,19 +399,28 @@ class SideloaderViewModel(app: Application) : AndroidViewModel(app) {
                 if (updatedState != null) {
                     watchStatus = WatchStatus.Ready(watchName, watchAddr, updatedState)
                 }
-                val where = if (installedSlot == LOADER_SLOT) "слот App Loader" else "слот #$installedSlot"
-                val okMsg = "Установлено «${pkg.inspection.header.name}» (v${formatVersion(pkg.inspection.header.version)}) в $where"
+                val where = if (installedSlot == LOADER_SLOT) {
+                    str(R.string.slot_loader_name)
+                } else {
+                    str(R.string.slot_number_name, installedSlot)
+                }
+                val okMsg = str(
+                    R.string.msg_installed,
+                    pkg.inspection.header.name,
+                    formatVersion(pkg.inspection.header.version),
+                    where,
+                )
                 log(okMsg)
                 bannerSuccess = okMsg
             } catch (e: CancellationException) {
                 throw e
             } catch (e: InstallError) {
-                val msg = e.message ?: "Ошибка установки"
+                val msg = localizeError(e, R.string.err_install_generic)
                 log("InstallError: $msg")
                 bannerError = msg
             } catch (e: Exception) {
-                val msg = e.message ?: "Сбой передачи по Bluetooth"
-                log("Ошибка установки: $msg")
+                val msg = localizeError(e, R.string.err_ble_transfer)
+                log("Install error: $msg")
                 bannerError = msg
             } finally {
                 transfer = null
@@ -360,7 +441,7 @@ class SideloaderViewModel(app: Application) : AndroidViewModel(app) {
                         link.connect(targetAddress = selectedAddress, scan = true)
                         val (session, secret) = KSession.open(link, secretHex = null, register = false)
                         prefs.edit().putString("k-${link.watchId}", secret).apply()
-                        log("Удаление слота #$slot ($name)...")
+                        log("Removing slot #$slot ($name)...")
                         remove(session, slot)
                         val fresh = readLoader(session)
                         Triple(fresh, link.watchName ?: "CMF Watch Pro 2", link.watchAddress ?: selectedAddress ?: "")
@@ -369,14 +450,14 @@ class SideloaderViewModel(app: Application) : AndroidViewModel(app) {
                 if (updatedState != null) {
                     watchStatus = WatchStatus.Ready(watchName, watchAddr, updatedState)
                 }
-                val okMsg = "Удалено «$name» из слота #$slot"
+                val okMsg = str(R.string.msg_removed, name, slot)
                 log(okMsg)
                 bannerSuccess = okMsg
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                val msg = e.message ?: "Не удалось удалить приложение"
-                log("Ошибка удаления: $msg")
+                val msg = localizeError(e, R.string.err_remove_generic)
+                log("Remove error: $msg")
                 bannerError = msg
             } finally {
                 removingSlot = null

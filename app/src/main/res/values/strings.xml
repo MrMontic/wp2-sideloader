@@ -1,4 +1,115 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">WP2 Sideloader</string>
+
+    <!-- Permissions & Toasts -->
+    <string name="perm_ble_required">Bluetooth permission ("Nearby devices") is required</string>
+    <string name="log_copied">Log copied</string>
+
+    <!-- Top bar & Banners -->
+    <string name="cd_logs">Logs</string>
+    <string name="cd_check_updates">Check for updates</string>
+    <string name="cd_close">Close</string>
+    <string name="cd_clear_file">Remove file</string>
+    <string name="cd_delete">Delete</string>
+    <string name="cd_copy">Copy</string>
+
+    <!-- Update checker -->
+    <string name="update_available_title">Update available: v%1$s</string>
+    <string name="update_available_sub">Current version: v%1$s</string>
+    <string name="update_download_btn">Download APK</string>
+    <string name="update_up_to_date">You are on the latest version (v%1$s)</string>
+    <string name="update_check_failed">Failed to check for updates: %1$s</string>
+
+    <!-- Watch card -->
+    <string name="watch_connecting">Connecting…</string>
+    <string name="watch_connect_error">Connection error</string>
+    <string name="watch_idle_hint">Tap "Connect" to read app slots</string>
+    <string name="watch_connecting_hint">Searching for watch and reading App Loader…</string>
+    <string name="watch_loader_ok">Loader OK</string>
+    <string name="watch_loader_missing">Loader missing</string>
+    <string name="watch_ready_summary">Stub v%1$d • %2$s • %3$d of %4$d slots free</string>
+    <string name="watch_stock_firmware">Patched firmware (stub) not found</string>
+    <string name="pill_loader_none">NONE</string>
+    <string name="btn_refresh">Refresh</string>
+    <string name="btn_connect">Connect</string>
+    <string name="btn_pick">Pick</string>
+
+    <!-- Install card -->
+    <string name="section_install_pkg">INSTALL .WP2APP PACKAGE</string>
+    <string name="pick_file_title">Select .wp2app file</string>
+    <string name="pick_file_hint">You can also open .wp2app files directly from Telegram or Files</string>
+    <string name="btn_change_file">Change</string>
+    <string name="pill_kind_loader">APP LOADER</string>
+    <string name="pill_kind_app">APP</string>
+    <string name="pill_size_kb">%1$.1f KB</string>
+    <string name="pill_crc_ok">CRC OK</string>
+    <string name="pill_crc_bad">CRC ERROR</string>
+    <string name="slot_selector_label">Install slot</string>
+    <string name="slot_auto_update">Auto (update #%1$d)</string>
+    <string name="slot_auto">Auto</string>
+    <string name="transfer_kb">%1$.1f / %2$.1f KB</string>
+    <string name="btn_installing">Installing…</string>
+    <string name="btn_pick_first">Select a .wp2app first</string>
+    <string name="btn_install_loader">Install App Loader</string>
+    <string name="btn_install_app">Install to Watch</string>
+
+    <!-- Installed apps -->
+    <string name="section_installed">INSTALLED ON WATCH</string>
+    <string name="slots_count">%1$d / %2$d slots</string>
+    <string name="no_apps_installed">No apps installed on the watch yet</string>
+
+    <!-- Dialogs -->
+    <string name="delete_title">Delete app?</string>
+    <string name="delete_message">"%1$s" will be removed from slot #%2$d along with its saved data on the watch.</string>
+    <string name="btn_delete">Delete</string>
+    <string name="btn_cancel">Cancel</string>
+    <string name="btn_close">Close</string>
+    <string name="btn_clear">Clear</string>
+    <string name="btn_rescan">Scan again</string>
+
+    <string name="picker_title">Select Watch</string>
+    <string name="picker_scanning">Searching for Bluetooth devices…</string>
+    <string name="picker_empty">No devices found</string>
+    <string name="picker_src_connected">Connected</string>
+    <string name="picker_src_bonded">Paired</string>
+    <string name="picker_src_nearby">Nearby</string>
+
+    <string name="logs_title">BLE Log</string>
+    <string name="logs_empty">Empty so far</string>
+
+    <!-- Transfer stages & ViewModel messages -->
+    <string name="stage_connecting">Connecting to watch…</string>
+    <string name="stage_auth">Authorizing (K-channel)…</string>
+    <string name="stage_sending_name">Sending %1$s…</string>
+    <string name="stage_sending">Sending to watch…</string>
+    <string name="stage_refreshing">Refreshing slot list…</string>
+
+    <string name="slot_loader_name">App Loader slot</string>
+    <string name="slot_number_name">slot #%1$d</string>
+    <string name="msg_installed">Installed "%1$s" (v%2$s) to %3$s</string>
+    <string name="msg_removed">Removed "%1$s" from slot #%2$d</string>
+
+    <!-- Errors -->
+    <string name="err_scan_generic">Bluetooth scan error</string>
+    <string name="err_connect_generic">Could not connect to watch</string>
+    <string name="err_file_open">Could not open file</string>
+    <string name="err_file_too_large">File is too large (%1$d KB). A .wp2app package must be under 256 KB.</string>
+    <string name="err_not_wp2a">"%1$s" is not a valid .wp2app package (missing WP2A header)</string>
+    <string name="err_file_read">Could not read file</string>
+    <string name="err_crc_corrupt">File CRC-32 checksum is invalid — installation cancelled</string>
+    <string name="err_install_generic">Installation failed</string>
+    <string name="err_ble_transfer">Bluetooth transfer failed</string>
+    <string name="err_remove_generic">Could not remove app</string>
+
+    <string name="err_ble_off">Bluetooth is off — enable it in phone settings</string>
+    <string name="err_ble_no_watch">CMF Watch not found. Make sure it is nearby and connected via Bluetooth</string>
+    <string name="err_ble_missing_gatt">CMF Watch GATT services not found on this device</string>
+    <string name="err_ble_dropped">Connection to the watch was lost</string>
+    <string name="err_install_busy">An app or the Apps menu is open on the watch — close it and try again</string>
+    <string name="err_install_no_slot">All %1$d slots on the watch are full — remove an app first</string>
+    <string name="err_install_bad_pkg">File is not a valid .wp2app package</string>
+    <string name="err_install_refused">Watch refused installation (code %1$s)</string>
+    <string name="err_wire_no_app">No app is currently running on the watch</string>
+    <string name="err_wire_refused">Watch refused request (code %1$s)</string>
 </resources>

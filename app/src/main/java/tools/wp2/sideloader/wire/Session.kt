@@ -37,8 +37,8 @@ enum class Status {
 
 sealed class WireError(message: String) : Exception(message) {
     data class Timeout(val what: String) : WireError(what)
-    data object NoApp : WireError("На часах нет запущенного приложения")
-    data class Refused(val status: Int) : WireError("Отказ часов (код %02X)".format(status))
+    data object NoApp : WireError("No app is currently running on the watch")
+    data class Refused(val status: Int) : WireError("Watch refused request (code %02X)".format(status))
 }
 
 fun interface Requester {
@@ -90,7 +90,7 @@ class KSession private constructor(private val link: Link, val key: ByteArray, v
                 if (t.startsWith("GETSECRET:") && t.endsWith(",OK")) {
                     secret = t.removePrefix("GETSECRET:").removeSuffix(",OK")
                 } else if (tries == 3) {
-                    throw WireError.Timeout("Не удалось получить ключ сопряжения (AT GETSECRET)")
+                    throw WireError.Timeout("Failed to read pairing key (AT GETSECRET)")
                 }
             }
             val key = channelKey(secret) ?: throw WireError.Refused(0xFF)
@@ -116,7 +116,7 @@ class KSession private constructor(private val link: Link, val key: ByteArray, v
         while (true) {
             val left = deadline - System.currentTimeMillis()
             val (got, body) = (if (left > 0) frames.next(left) else null)
-                ?: throw WireError.Timeout("Таймаут ответа на команду %04X".format(c2))
+                ?: throw WireError.Timeout("Command %04X timed out".format(c2))
             if (got == c2 or 0xA000) open(key, body)?.let { return it }
         }
     }

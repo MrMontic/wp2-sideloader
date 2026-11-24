@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">WP2 Sideloader</string>
+
+    <!-- Permissions & Toasts -->
+    <string name="perm_ble_required">Нужны разрешения Bluetooth («Устройства поблизости»)</string>
+    <string name="log_copied">Журнал скопирован</string>
+
+    <!-- Top bar & Banners -->
+    <string name="cd_logs">Журнал</string>
+    <string name="cd_check_updates">Проверить обновления</string>
+    <string name="cd_close">Закрыть</string>
+    <string name="cd_clear_file">Убрать файл</string>
+    <string name="cd_delete">Удалить</string>
+    <string name="cd_copy">Копировать</string>
+
+    <!-- Update checker -->
+    <string name="update_available_title">Доступно обновление v%1$s</string>
+    <string name="update_available_sub">Текущая версия: v%1$s</string>
+    <string name="update_download_btn">Скачать APK</string>
+    <string name="update_up_to_date">Установлена последняя версия (v%1$s)</string>
+    <string name="update_check_failed">Не удалось проверить обновления: %1$s</string>
+
+    <!-- Watch card -->
+    <string name="watch_connecting">Подключение…</string>
+    <string name="watch_connect_error">Ошибка подключения</string>
+    <string name="watch_idle_hint">Нажми «Подключить», чтобы прочитать слоты</string>
+    <string name="watch_connecting_hint">Поиск часов и чтение App Loader…</string>
+    <string name="watch_loader_ok">Loader OK</string>
+    <string name="watch_loader_missing">Loader не найден</string>
+    <string name="watch_ready_summary">Stub v%1$d • %2$s • Свободно %3$d из %4$d</string>
+    <string name="watch_stock_firmware">Не найден патч прошивки (stub)</string>
+    <string name="pill_loader_none">НЕТ</string>
+    <string name="btn_refresh">Обновить</string>
+    <string name="btn_connect">Подключить</string>
+    <string name="btn_pick">Выбрать</string>
+
+    <!-- Install card -->
+    <string name="section_install_pkg">УСТАНОВКА ПАКЕТА .WP2APP</string>
+    <string name="pick_file_title">Выбрать файл .wp2app</string>
+    <string name="pick_file_hint">Также можно открывать .wp2app напрямую из Telegram или «Файлов»</string>
+    <string name="btn_change_file">Другой</string>
+    <string name="pill_kind_loader">APP LOADER</string>
+    <string name="pill_kind_app">ПРИЛОЖЕНИЕ</string>
+    <string name="pill_size_kb">%1$.1f КБ</string>
+    <string name="pill_crc_ok">CRC OK</string>
+    <string name="pill_crc_bad">CRC ОШИБКА</string>
+    <string name="slot_selector_label">Слот установки</string>
+    <string name="slot_auto_update">Авто (обновить #%1$d)</string>
+    <string name="slot_auto">Авто</string>
+    <string name="transfer_kb">%1$.1f / %2$.1f КБ</string>
+    <string name="btn_installing">Идёт установка…</string>
+    <string name="btn_pick_first">Сначала выбери .wp2app</string>
+    <string name="btn_install_loader">Установить App Loader</string>
+    <string name="btn_install_app">Установить на часы</string>
+
+    <!-- Installed apps -->
+    <string name="section_installed">УСТАНОВЛЕНО НА ЧАСАХ</string>
+    <string name="slots_count">%1$d / %2$d слотов</string>
+    <string name="no_apps_installed">На часах пока нет установленных приложений</string>
+
+    <!-- Dialogs -->
+    <string name="delete_title">Удалить приложение?</string>
+    <string name="delete_message">«%1$s» будет удалено из слота #%2$d вместе со своими данными на часах.</string>
+    <string name="btn_delete">Удалить</string>
+    <string name="btn_cancel">Отмена</string>
+    <string name="btn_close">Закрыть</string>
+    <string name="btn_clear">Очистить</string>
+    <string name="btn_rescan">Искать ещё</string>
+
+    <string name="picker_title">Выбор часов</string>
+    <string name="picker_scanning">Ищем Bluetooth-устройства…</string>
+    <string name="picker_empty">Устройства не найдены</string>
+    <string name="picker_src_connected">Подключено</string>
+    <string name="picker_src_bonded">Сопряжено</string>
+    <string name="picker_src_nearby">Рядом</string>
+
+    <string name="logs_title">Журнал BLE</string>
+    <string name="logs_empty">Пока пусто</string>
+
+    <!-- Transfer stages & ViewModel messages -->
+    <string name="stage_connecting">Подключение к часам…</string>
+    <string name="stage_auth">Авторизация (K-канал)…</string>
+    <string name="stage_sending_name">Передача %1$s…</string>
+    <string name="stage_sending">Передача на часы…</string>
+    <string name="stage_refreshing">Обновление списка слотов…</string>
+
+    <string name="slot_loader_name">слот App Loader</string>
+    <string name="slot_number_name">слот #%1$d</string>
+    <string name="msg_installed">Установлено «%1$s» (v%2$s) в %3$s</string>
+    <string name="msg_removed">Удалено «%1$s» из слота #%2$d</string>
+
+    <!-- Errors -->
+    <string name="err_scan_generic">Ошибка сканирования Bluetooth</string>
+    <string name="err_connect_generic">Не удалось подключиться к часам</string>
+    <string name="err_file_open">Не удалось открыть файл</string>
+    <string name="err_file_too_large">Файл слишком большой (%1$d КБ). Пакет .wp2app не превышает 256 КБ.</string>
+    <string name="err_not_wp2a">Файл «%1$s» не является пакетом .wp2app (нет заголовка WP2A)</string>
+    <string name="err_file_read">Не удалось прочитать файл</string>
+    <string name="err_crc_corrupt">Контрольная сумма (CRC-32) файла повреждена — установка отменена</string>
+    <string name="err_install_generic">Ошибка установки</string>
+    <string name="err_ble_transfer">Сбой передачи по Bluetooth</string>
+    <string name="err_remove_generic">Не удалось удалить приложение</string>
+
+    <string name="err_ble_off">Bluetooth выключен — включи его в настройках телефона</string>
+    <string name="err_ble_no_watch">Часы CMF Watch не найдены. Убедись, что они рядом и подключены по Bluetooth</string>
+    <string name="err_ble_missing_gatt">На устройстве не найдены GATT-сервисы CMF Watch</string>
+    <string name="err_ble_dropped">Соединение с часами прервано</string>
+    <string name="err_install_busy">Приложение или меню Apps сейчас открыто на часах — закрой его и попробуй снова</string>
+    <string name="err_install_no_slot">Все %1$d слотов на часах заняты — удали ненужное приложение</string>
+    <string name="err_install_bad_pkg">Файл не является корректным пакетом .wp2app</string>
+    <string name="err_install_refused">Часы отклонили установку (код %1$s)</string>
+    <string name="err_wire_no_app">На часах нет запущенного приложения</string>
+    <string name="err_wire_refused">Отказ часов (код %1$s)</string>
+</resources>

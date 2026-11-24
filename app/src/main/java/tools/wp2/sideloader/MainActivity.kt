@@ -48,10 +48,12 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FileOpen
 import androidx.compose.material.icons.rounded.InstallMobile
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Watch
 import androidx.compose.material3.AlertDialog
@@ -87,6 +89,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -167,6 +170,9 @@ fun SideloaderScreen(vm: SideloaderViewModel) {
     var pendingDelete by remember { mutableStateOf<Pair<Int, String>?>(null) }
     var pendingBleAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
+    val permDeniedMsg = stringResource(R.string.perm_ble_required)
+    val logCopiedMsg = stringResource(R.string.log_copied)
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
@@ -175,11 +181,7 @@ fun SideloaderScreen(vm: SideloaderViewModel) {
             pendingBleAction = null
         } else {
             pendingBleAction = null
-            Toast.makeText(
-                context,
-                "Нужны разрешения Bluetooth («Устройства поблизости»)",
-                Toast.LENGTH_LONG
-            ).show()
+            Toast.makeText(context, permDeniedMsg, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -211,17 +213,45 @@ fun SideloaderScreen(vm: SideloaderViewModel) {
                         )
                         Spacer(Modifier.width(10.dp))
                         Text(
-                            text = "WP2 Sideloader",
+                            text = stringResource(R.string.app_name),
                             fontWeight = FontWeight.Bold,
                             letterSpacing = (-0.3).sp,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "v${BuildConfig.VERSION_NAME}",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = { vm.checkForUpdates(manual = true) },
+                        enabled = !vm.checkingUpdate,
+                    ) {
+                        if (vm.checkingUpdate) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Rounded.SystemUpdate,
+                                contentDescription = stringResource(R.string.cd_check_updates),
+                                tint = if (vm.availableUpdate != null) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                            )
+                        }
+                    }
                     IconButton(onClick = { showLogs = true }) {
                         Icon(
                             imageVector = Icons.Rounded.Terminal,
-                            contentDescription = "Журнал",
+                            contentDescription = stringResource(R.string.cd_logs),
                         )
                     }
                 },
@@ -239,6 +269,22 @@ fun SideloaderScreen(vm: SideloaderViewModel) {
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            // Update Available Banner
+            item {
+                AnimatedVisibility(visible = vm.availableUpdate != null) {
+                    vm.availableUpdate?.let { upd ->
+                        UpdateBannerCard(
+                            update = upd,
+                            onDownload = {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(upd.downloadUrl))
+                                runCatching { context.startActivity(intent) }
+                            },
+                            onDismiss = { vm.dismissUpdate() },
+                        )
+                    }
+                }
+            }
+
             // Banners (success / error)
             item {
                 AnimatedVisibility(visible = vm.bannerSuccess != null || vm.bannerError != null) {
@@ -284,7 +330,7 @@ fun SideloaderScreen(vm: SideloaderViewModel) {
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.Close,
-                                    contentDescription = "Закрыть",
+                                    contentDescription = stringResource(R.string.cd_close),
                                     modifier = Modifier.size(18.dp),
                                 )
                             }
@@ -337,13 +383,17 @@ fun SideloaderScreen(vm: SideloaderViewModel) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = "УСТАНОВЛЕНО НА ЧАСАХ",
+                            text = stringResource(R.string.section_installed),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             letterSpacing = 1.sp,
                         )
                         Text(
-                            text = "${ready.loaderState.apps.size} / ${ready.loaderState.totalSlots} слотов",
+                            text = stringResource(
+                                R.string.slots_count,
+                                ready.loaderState.apps.size,
+                                ready.loaderState.totalSlots,
+                            ),
                             style = MaterialTheme.typography.labelMedium,
                             fontFamily = FontFamily.Monospace,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -365,7 +415,7 @@ fun SideloaderScreen(vm: SideloaderViewModel) {
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
-                                    text = "На часах пока нет установленных приложений",
+                                    text = stringResource(R.string.no_apps_installed),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -410,8 +460,8 @@ fun SideloaderScreen(vm: SideloaderViewModel) {
     pendingDelete?.let { (slot, name) ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            title = { Text("Удалить приложение?") },
-            text = { Text("«$name» будет удалено из слота #$slot вместе со своими данными на часах.") },
+            title = { Text(stringResource(R.string.delete_title)) },
+            text = { Text(stringResource(R.string.delete_message, name, slot)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -420,12 +470,12 @@ fun SideloaderScreen(vm: SideloaderViewModel) {
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                 ) {
-                    Text("Удалить")
+                    Text(stringResource(R.string.btn_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { pendingDelete = null }) {
-                    Text("Отмена")
+                    Text(stringResource(R.string.btn_cancel))
                 }
             },
         )
@@ -457,11 +507,76 @@ fun SideloaderScreen(vm: SideloaderViewModel) {
             onCopy = {
                 val cm = context.getSystemService(ClipboardManager::class.java)
                 cm.setPrimaryClip(ClipData.newPlainText("WP2 Sideloader Log", vm.logs.joinToString("\n")))
-                Toast.makeText(context, "Журнал скопирован", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, logCopiedMsg, Toast.LENGTH_SHORT).show()
             },
             onClear = { vm.logs.clear() },
             onDismiss = { showLogs = false },
         )
+    }
+}
+
+@Composable
+private fun UpdateBannerCard(
+    update: UpdateInfo,
+    onDownload: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Rounded.SystemUpdate,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp),
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.update_available_title, update.latestVersion),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = stringResource(R.string.update_available_sub, BuildConfig.VERSION_NAME),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(28.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = stringResource(R.string.cd_close),
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Button(
+                onClick = onDownload,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Download,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.update_download_btn))
+            }
+        }
     }
 }
 
@@ -524,10 +639,10 @@ private fun WatchCard(
                     Text(
                         text = when (status) {
                             is WatchStatus.Idle -> savedWatchName ?: "CMF Watch Pro 2"
-                            is WatchStatus.Connecting -> "Подключение..."
+                            is WatchStatus.Connecting -> stringResource(R.string.watch_connecting)
                             is WatchStatus.Ready -> status.watchName
                             is WatchStatus.StockFirmware -> status.watchName
-                            is WatchStatus.Error -> savedWatchName ?: "Ошибка подключения"
+                            is WatchStatus.Error -> savedWatchName ?: stringResource(R.string.watch_connect_error)
                         },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
@@ -537,14 +652,24 @@ private fun WatchCard(
                     Spacer(Modifier.height(2.dp))
                     Text(
                         text = when (status) {
-                            is WatchStatus.Idle -> "Нажми «Подключить», чтобы прочитать слоты"
-                            is WatchStatus.Connecting -> "Поиск часов и чтение App Loader..."
+                            is WatchStatus.Idle -> stringResource(R.string.watch_idle_hint)
+                            is WatchStatus.Connecting -> stringResource(R.string.watch_connecting_hint)
                             is WatchStatus.Ready -> {
                                 val st = status.loaderState
-                                val loaderText = if (st.loader != null) "Loader OK" else "Loader не найден"
-                                "Stub v${st.stub.version} • $loaderText • Свободно ${st.freeSlots} из ${st.totalSlots}"
+                                val loaderText = if (st.loader != null) {
+                                    stringResource(R.string.watch_loader_ok)
+                                } else {
+                                    stringResource(R.string.watch_loader_missing)
+                                }
+                                stringResource(
+                                    R.string.watch_ready_summary,
+                                    st.stub.version,
+                                    loaderText,
+                                    st.freeSlots,
+                                    st.totalSlots,
+                                )
                             }
-                            is WatchStatus.StockFirmware -> "Не найден патч прошивки (stub)"
+                            is WatchStatus.StockFirmware -> stringResource(R.string.watch_stock_firmware)
                             is WatchStatus.Error -> status.message
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -564,7 +689,8 @@ private fun WatchCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     InfoPill("STUB v${status.loaderState.stub.version}")
-                    val loaderCrc = status.loaderState.loader?.crc?.let { "%08x".format(it) } ?: "НЕТ"
+                    val loaderCrc = status.loaderState.loader?.crc?.let { "%08x".format(it) }
+                        ?: stringResource(R.string.pill_loader_none)
                     InfoPill("LOADER $loaderCrc")
                     status.loaderState.stub.abiMinor?.let { InfoPill("ABI 1.$it") }
                 }
@@ -588,7 +714,11 @@ private fun WatchCard(
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text(if (status is WatchStatus.Ready) "Обновить" else "Подключить")
+                    Text(
+                        stringResource(
+                            if (status is WatchStatus.Ready) R.string.btn_refresh else R.string.btn_connect
+                        )
+                    )
                 }
 
                 OutlinedButton(
@@ -602,7 +732,7 @@ private fun WatchCard(
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(Modifier.width(6.dp))
-                    Text("Выбрать")
+                    Text(stringResource(R.string.btn_pick))
                 }
             }
         }
@@ -629,7 +759,7 @@ private fun InstallPackageCard(
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
             Text(
-                text = "УСТАНОВКА ПАКЕТА .WP2APP",
+                text = stringResource(R.string.section_install_pkg),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 letterSpacing = 1.sp,
@@ -659,13 +789,13 @@ private fun InstallPackageCard(
                         )
                         Spacer(Modifier.height(10.dp))
                         Text(
-                            text = "Выбрать файл .wp2app",
+                            text = stringResource(R.string.pick_file_title),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            text = "Также можно открывать .wp2app напрямую из Telegram или «Файлов»",
+                            text = stringResource(R.string.pick_file_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -703,7 +833,7 @@ private fun InstallPackageCard(
                             }
                             if (!isBusy) {
                                 TextButton(onClick = onPickFile) {
-                                    Text("Другой")
+                                    Text(stringResource(R.string.btn_change_file))
                                 }
                                 IconButton(
                                     onClick = onClearFile,
@@ -711,7 +841,7 @@ private fun InstallPackageCard(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Rounded.Close,
-                                        contentDescription = "Убрать файл",
+                                        contentDescription = stringResource(R.string.cd_clear_file),
                                         modifier = Modifier.size(18.dp),
                                     )
                                 }
@@ -724,12 +854,18 @@ private fun InstallPackageCard(
                             modifier = Modifier.horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            InfoPill(if (hdr.isLoader) "APP LOADER" else "ПРИЛОЖЕНИЕ")
+                            InfoPill(
+                                stringResource(
+                                    if (hdr.isLoader) R.string.pill_kind_loader else R.string.pill_kind_app
+                                )
+                            )
                             InfoPill("v${formatVersion(hdr.version)}")
-                            InfoPill("%.1f КБ".format(ins.totalBytes / 1024f))
+                            InfoPill(stringResource(R.string.pill_size_kb, ins.totalBytes / 1024f))
                             InfoPill("ABI ${ins.abiText}")
                             InfoPill(
-                                text = if (ins.crcValid) "CRC OK" else "CRC ОШИБКА",
+                                text = stringResource(
+                                    if (ins.crcValid) R.string.pill_crc_ok else R.string.pill_crc_bad
+                                ),
                                 tint = if (ins.crcValid) SuccessGreen else MaterialTheme.colorScheme.error,
                             )
                         }
@@ -740,7 +876,7 @@ private fun InstallPackageCard(
                 if (hdr.isApp && watchStatus is WatchStatus.Ready) {
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        text = "Слот установки",
+                        text = stringResource(R.string.slot_selector_label),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -758,8 +894,11 @@ private fun InstallPackageCard(
                             enabled = !isBusy,
                             label = {
                                 Text(
-                                    if (existingSlot != null) "Авто (обновить #$existingSlot)"
-                                    else "Авто"
+                                    if (existingSlot != null) {
+                                        stringResource(R.string.slot_auto_update, existingSlot)
+                                    } else {
+                                        stringResource(R.string.slot_auto)
+                                    }
                                 )
                             },
                         )
@@ -803,7 +942,8 @@ private fun InstallPackageCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     val pct = (transfer.fraction * 100).toInt()
-                    val kbText = "%.1f / %.1f КБ".format(
+                    val kbText = stringResource(
+                        R.string.transfer_kb,
                         transfer.sentBytes / 1024f,
                         transfer.totalBytes / 1024f,
                     )
@@ -850,12 +990,14 @@ private fun InstallPackageCard(
                 )
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    text = when {
-                        transfer != null -> "Идёт установка..."
-                        pkg == null -> "Сначала выбери .wp2app"
-                        pkg.inspection.header.isLoader -> "Установить App Loader"
-                        else -> "Установить на часы"
-                    },
+                    text = stringResource(
+                        when {
+                            transfer != null -> R.string.btn_installing
+                            pkg == null -> R.string.btn_pick_first
+                            pkg.inspection.header.isLoader -> R.string.btn_install_loader
+                            else -> R.string.btn_install_app
+                        }
+                    ),
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp,
                 )
@@ -921,7 +1063,7 @@ private fun InstalledAppRow(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.DeleteOutline,
-                    contentDescription = "Удалить",
+                    contentDescription = stringResource(R.string.cd_delete),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -961,7 +1103,7 @@ private fun DevicePickerDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Выбор часов", modifier = Modifier.weight(1f))
+                Text(stringResource(R.string.picker_title), modifier = Modifier.weight(1f))
                 if (scanning) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 }
@@ -979,7 +1121,9 @@ private fun DevicePickerDialog(
                 }
                 if (devices.isEmpty()) {
                     Text(
-                        text = if (scanning) "Ищем Bluetooth-устройства..." else "Устройства не найдены",
+                        text = stringResource(
+                            if (scanning) R.string.picker_scanning else R.string.picker_empty
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1004,9 +1148,12 @@ private fun DevicePickerDialog(
                                         fontWeight = if (dev.isCmfWatch) FontWeight.Bold else FontWeight.Medium,
                                     )
                                     val src = when (dev.source) {
-                                        DiscoveredWatch.Source.CONNECTED -> "Подключено"
-                                        DiscoveredWatch.Source.BONDED -> "Сопряжено"
-                                        DiscoveredWatch.Source.SCANNED -> "Рядом${dev.rssi?.let { " ($it dBm)" } ?: ""}"
+                                        DiscoveredWatch.Source.CONNECTED -> stringResource(R.string.picker_src_connected)
+                                        DiscoveredWatch.Source.BONDED -> stringResource(R.string.picker_src_bonded)
+                                        DiscoveredWatch.Source.SCANNED -> {
+                                            val base = stringResource(R.string.picker_src_nearby)
+                                            "$base${dev.rssi?.let { " ($it dBm)" } ?: ""}"
+                                        }
                                     }
                                     Text(
                                         text = "${dev.address} • $src",
@@ -1023,12 +1170,12 @@ private fun DevicePickerDialog(
         },
         confirmButton = {
             TextButton(onClick = onRescan, enabled = !scanning) {
-                Text("Искать ещё")
+                Text(stringResource(R.string.btn_rescan))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Закрыть")
+                Text(stringResource(R.string.btn_close))
             }
         },
     )
@@ -1043,7 +1190,7 @@ private fun LogDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Журнал BLE") },
+        title = { Text(stringResource(R.string.logs_title)) },
         text = {
             Box(
                 modifier = Modifier
@@ -1055,7 +1202,7 @@ private fun LogDialog(
                     .verticalScroll(rememberScrollState()),
             ) {
                 Text(
-                    text = if (logs.isEmpty()) "Пока пусто" else logs.joinToString("\n"),
+                    text = if (logs.isEmpty()) stringResource(R.string.logs_empty) else logs.joinToString("\n"),
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
@@ -1066,14 +1213,14 @@ private fun LogDialog(
             Row {
                 if (logs.isNotEmpty()) {
                     IconButton(onClick = onCopy) {
-                        Icon(Icons.Rounded.ContentCopy, contentDescription = "Копировать")
+                        Icon(Icons.Rounded.ContentCopy, contentDescription = stringResource(R.string.cd_copy))
                     }
                     TextButton(onClick = onClear) {
-                        Text("Очистить")
+                        Text(stringResource(R.string.btn_clear))
                     }
                 }
                 TextButton(onClick = onDismiss) {
-                    Text("Закрыть")
+                    Text(stringResource(R.string.btn_close))
                 }
             }
         },

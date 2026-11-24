@@ -25,12 +25,14 @@ import tools.wp2.sideloader.wire.Link
 import tools.wp2.sideloader.wire.Uuid
 import tools.wp2.sideloader.wire.sha256Hex
 
-class BleError(message: String) : Exception(message) {
+class BleError(message: String, val kind: Kind = Kind.OTHER) : Exception(message) {
+    enum class Kind { OFF, NO_WATCH, MISSING_GATT, DROPPED, OTHER }
+
     companion object {
-        val off get() = BleError("Bluetooth выключен — включи его в настройках телефона")
-        val noWatch get() = BleError("Часы CMF Watch не найдены. Убедись, что они рядом и подключены по Bluetooth")
-        val missing get() = BleError("На устройстве не найдены GATT-сервисы CMF Watch")
-        val dropped get() = BleError("Соединение с часами прервано")
+        val off get() = BleError("Bluetooth is off", Kind.OFF)
+        val noWatch get() = BleError("CMF Watch not found", Kind.NO_WATCH)
+        val missing get() = BleError("CMF Watch GATT services not found", Kind.MISSING_GATT)
+        val dropped get() = BleError("Connection to watch lost", Kind.DROPPED)
     }
 }
 
@@ -94,7 +96,7 @@ class BleLink(
         watchId = sha256Hex(device.address).take(16)
         watchName = device.name ?: "CMF Watch (${device.address.takeLast(5)})"
         watchAddress = device.address
-        log("Подключение к $watchName [${device.address}]...")
+        log("Connecting to $watchName [${device.address}]...")
 
         dropped = false
         gattStep(Op.CONNECT) {
@@ -113,7 +115,7 @@ class BleLink(
             }
         }
         if (REQUIRED.any { it !in chars }) {
-            log("Не найдены нужные характеристики: есть ${chars.keys}")
+            log("Required GATT characteristics missing: found ${chars.keys}")
             throw BleError.missing
         }
         for (name in NOTIFIES) {
@@ -122,7 +124,7 @@ class BleLink(
             val d = c.getDescriptor(CCCD) ?: continue
             gattStep(Op.DESCRIPTOR) { writeDescriptor(g, d) }
         }
-        log("GATT готов, уведомления включены")
+        log("GATT ready, notifications enabled")
     }
 
     fun disconnect() {
@@ -178,13 +180,13 @@ class BleLink(
     private suspend fun stepLocked(op: Op, start: () -> Any?) {
         val s = Step(op)
         step = s
-        if (start() == false) throw BleError("Android отклонил BLE-операцию ($op)")
+        if (start() == false) throw BleError("Android rejected BLE operation ($op)")
         withTimeout(STEP_MS) { s.done.await() }
     }
 
     private suspend fun scanForWatch(): BluetoothDevice? {
         val scanner = manager?.adapter?.bluetoothLeScanner ?: return null
-        log("BLE-сканирование CMF Watch (до 10 сек)...")
+        log("BLE scanning for CMF Watch (up to 10s)...")
         val found = CompletableDeferred<BluetoothDevice>()
         val cb = object : ScanCallback() {
             override fun onScanResult(type: Int, r: ScanResult) {
@@ -207,7 +209,7 @@ class BleLink(
         if (status == BluetoothGatt.GATT_SUCCESS) {
             s.done.complete(Unit)
         } else {
-            s.done.completeExceptionally(BleError("Ошибка BLE GATT (код $status, шаг $op)"))
+            s.done.completeExceptionally(BleError("BLE GATT error (status $status, op $op)"))
         }
     }
 

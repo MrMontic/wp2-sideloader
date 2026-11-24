@@ -28,6 +28,8 @@
 - **Удобный выбор файлов** — можно выбрать `.wp2app` через проводник или открыть напрямую из Telegram / «Файлов» через *«Открыть с помощью»* / *«Поделиться»*.
 - **Проверка целостности до отправки** — валидирует заголовок `WP2A` и контрольную сумму **CRC-32** перед загрузкой на часы.
 - **Выбор слота и управление** — автоматический или ручной выбор слота, прогресс-бар передачи в реальном времени и удаление установленных приложений с часов.
+- **Русский и английский интерфейс** — автоматически подстраивается под язык системы (English / Русский).
+- **Проверка обновлений** — автоматическая и ручная проверка новых версий прямо с GitHub Releases в один тап.
 
 ### Требования
 - **Телефон:** Android **12, 13, 14, 15 или 16+** (`minSdk 31`, `targetSdk 36`).
@@ -49,6 +51,8 @@
 - **Flexible file picker** — pick local `.wp2app` files or open/share them directly from Telegram, Downloads, or any file manager.
 - **Pre-flight CRC-32 verification** — validates the `WP2A` package header and **CRC-32** checksum before transferring bytes to the watch.
 - **Slot management** — automatic or manual slot selection, live transfer progress indicator, and one-tap uninstall of existing slots.
+- **English & Russian UI** — automatically matches your phone's system language.
+- **Built-in update checker** — automatically checks GitHub Releases for newer APKs with one-tap download.
 
 ### Requirements
 - **Phone:** Android **12 – 16+** (`minSdk 31`, `targetSdk 36`).

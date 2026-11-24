@@ -36,10 +36,10 @@ data class PackageInspection(
 }
 
 sealed class InstallError(message: String) : Exception(message) {
-    data object Busy : InstallError("Приложение или меню Apps сейчас открыто на часах — закрой его и попробуй снова")
-    data class NoFreeSlot(val slots: Int) : InstallError("Все $slots слотов на часах заняты — удали ненужное приложение")
-    data object NotAPackage : InstallError("Файл не является корректным пакетом .wp2app")
-    data class Refused(val status: Int) : InstallError("Часы отклонили установку (код %02X)".format(status))
+    data object Busy : InstallError("An app or the Apps menu is open on the watch — close it and try again")
+    data class NoFreeSlot(val slots: Int) : InstallError("All $slots slots on the watch are full")
+    data object NotAPackage : InstallError("File is not a valid .wp2app package")
+    data class Refused(val status: Int) : InstallError("Watch refused installation (code %02X)".format(status))
 }
 
 fun formatVersion(v: Long): String =
