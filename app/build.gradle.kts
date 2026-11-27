@@ -12,8 +12,8 @@ android {
         applicationId = "tools.wp2.sideloader"
         minSdk = 31
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.0.2"
+        versionCode = 6
+        versionName = "1.1.0"
     }
 
     val releaseKeystore = System.getenv("WP2_STORE_FILE")?.let { file(it) }

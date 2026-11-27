@@ -8,6 +8,8 @@
 
     <!-- Top bar & Banners -->
     <string name="cd_logs">Logs</string>
+    <string name="cd_settings">Settings</string>
+    <string name="cd_back">Back</string>
     <string name="cd_check_updates">Check for updates</string>
     <string name="cd_close">Close</string>
     <string name="cd_clear_file">Remove file</string>
@@ -112,4 +114,30 @@
     <string name="err_install_refused">Watch refused installation (code %1$s)</string>
     <string name="err_wire_no_app">No app is currently running on the watch</string>
     <string name="err_wire_refused">Watch refused request (code %1$s)</string>
+
+    <!-- Settings & Themes -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_autoconnect_title">Auto-connect on launch</string>
+    <string name="settings_autoconnect_sub">Automatically connect to your CMF Watch Pro 2 when opening the app</string>
+    <string name="settings_saved_watch">Saved watch</string>
+    <string name="settings_saved_watch_none">Not paired yet</string>
+    <string name="settings_forget">Forget</string>
+    <string name="settings_appearance">APPEARANCE</string>
+    <string name="settings_updates_title">Check for updates</string>
+    <string name="settings_updates_sub">GitHub Releases · v%1$s</string>
+    <string name="settings_check_btn">Check</string>
+    <string name="settings_logs_title">BLE Diagnostic Log</string>
+    <string name="settings_logs_sub">%1$d lines recorded</string>
+    <string name="settings_open_btn">Open</string>
+    <string name="badge_auto">AUTO</string>
+    <string name="slots_free_count">%1$d free</string>
+
+    <string name="theme_cmf_name">CMF / Nothing</string>
+    <string name="theme_cmf_tag">Signature dark · CMF Orange</string>
+    <string name="theme_glass_name">Liquid Glass</string>
+    <string name="theme_glass_tag">Frosted translucent glass</string>
+    <string name="theme_light_name">Nothing Light</string>
+    <string name="theme_light_tag">Clean light minimalism</string>
+    <string name="theme_oled_name">AMOLED Stealth</string>
+    <string name="theme_oled_tag">Pure black OLED monochrome</string>
 </resources>

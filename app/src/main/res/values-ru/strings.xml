@@ -8,6 +8,8 @@
 
     <!-- Top bar & Banners -->
     <string name="cd_logs">Журнал</string>
+    <string name="cd_settings">Настройки</string>
+    <string name="cd_back">Назад</string>
     <string name="cd_check_updates">Проверить обновления</string>
     <string name="cd_close">Закрыть</string>
     <string name="cd_clear_file">Убрать файл</string>
@@ -112,4 +114,30 @@
     <string name="err_install_refused">Часы отклонили установку (код %1$s)</string>
     <string name="err_wire_no_app">На часах нет запущенного приложения</string>
     <string name="err_wire_refused">Отказ часов (код %1$s)</string>
+
+    <!-- Настройки и темы -->
+    <string name="settings_title">Настройки</string>
+    <string name="settings_autoconnect_title">Автоподключение</string>
+    <string name="settings_autoconnect_sub">Сразу подключаться к CMF Watch Pro 2 при входе в приложение</string>
+    <string name="settings_saved_watch">Запомненные часы</string>
+    <string name="settings_saved_watch_none">Ещё не выбраны</string>
+    <string name="settings_forget">Забыть</string>
+    <string name="settings_appearance">ОФОРМЛЕНИЕ ПРИЛОЖЕНИЯ</string>
+    <string name="settings_updates_title">Проверка обновлений</string>
+    <string name="settings_updates_sub">GitHub Releases · v%1$s</string>
+    <string name="settings_check_btn">Проверить</string>
+    <string name="settings_logs_title">Журнал BLE</string>
+    <string name="settings_logs_sub">Записей: %1$d</string>
+    <string name="settings_open_btn">Открыть</string>
+    <string name="badge_auto">AUTO</string>
+    <string name="slots_free_count">%1$d свободно</string>
+
+    <string name="theme_cmf_name">CMF / Nothing</string>
+    <string name="theme_cmf_tag">Фирменный стиль · CMF Orange</string>
+    <string name="theme_glass_name">Liquid Glass</string>
+    <string name="theme_glass_tag">Матовое стекло с бликом</string>
+    <string name="theme_light_name">Nothing Light</string>
+    <string name="theme_light_tag">Светлый минимализм</string>
+    <string name="theme_oled_name">AMOLED Stealth</string>
+    <string name="theme_oled_tag">Чистый чёрный OLED монохром</string>
 </resources>

@@ -20,6 +20,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import tools.wp2.sideloader.ui.AppTheme
 import tools.wp2.sideloader.wire.InstallError
 import tools.wp2.sideloader.wire.KSession
 import tools.wp2.sideloader.wire.LOADER_SLOT
@@ -106,9 +107,16 @@ class SideloaderViewModel(app: Application) : AndroidViewModel(app) {
     var checkingUpdate by mutableStateOf(false)
         private set
 
+    var appTheme by mutableStateOf(AppTheme.fromId(prefs.getString("app_theme", null)))
+        private set
+
+    var autoConnect by mutableStateOf(prefs.getBoolean("auto_connect", true))
+        private set
+
     val logs = mutableStateListOf<String>()
 
     private var scanJob: Job? = null
+    private var autoConnectAttempted = false
 
     val isBusy: Boolean
         get() = watchStatus is WatchStatus.Connecting || transfer != null || removingSlot != null
@@ -116,6 +124,26 @@ class SideloaderViewModel(app: Application) : AndroidViewModel(app) {
     init {
         // Silently check GitHub Releases for a newer APK on startup
         checkForUpdates(manual = false)
+    }
+
+    fun setTheme(theme: AppTheme) {
+        if (appTheme == theme) return
+        appTheme = theme
+        prefs.edit().putString("app_theme", theme.id).apply()
+    }
+
+    fun setAutoConnectEnabled(enabled: Boolean) {
+        if (autoConnect == enabled) return
+        autoConnect = enabled
+        prefs.edit().putBoolean("auto_connect", enabled).apply()
+    }
+
+    fun maybeAutoConnect(hasPermissions: Boolean) {
+        if (autoConnectAttempted || !autoConnect || !hasPermissions) return
+        if (watchStatus !is WatchStatus.Idle || isBusy) return
+        autoConnectAttempted = true
+        log("Auto-connecting to watch on startup...")
+        connectAndRead(preferredAddress = selectedAddress)
     }
 
     private fun str(@StringRes id: Int, vararg args: Any): String =

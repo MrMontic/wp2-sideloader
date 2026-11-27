@@ -11,14 +11,20 @@ import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -33,6 +39,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -41,9 +48,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Bluetooth
-import androidx.compose.material.icons.rounded.BluetoothConnected
 import androidx.compose.material.icons.rounded.BluetoothSearching
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -53,40 +61,39 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FileOpen
 import androidx.compose.material.icons.rounded.InstallMobile
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Terminal
-import androidx.compose.material.icons.rounded.Watch
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
@@ -96,9 +103,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import tools.wp2.sideloader.ui.SuccessGreen
+import tools.wp2.sideloader.ui.AppTheme
+import tools.wp2.sideloader.ui.DotMatrixOverlay
+import tools.wp2.sideloader.ui.LocalWp2Style
 import tools.wp2.sideloader.ui.WP2Theme
 import tools.wp2.sideloader.ui.WarnAmber
+import tools.wp2.sideloader.ui.Wp2Backdrop
+import tools.wp2.sideloader.ui.Wp2SlotSurface
+import tools.wp2.sideloader.ui.Wp2ThemedCard
 import tools.wp2.sideloader.wire.PackageHeader
 import tools.wp2.sideloader.wire.formatVersion
 
@@ -111,7 +123,7 @@ class MainActivity : ComponentActivity() {
         handleIncomingIntent(intent)
 
         setContent {
-            WP2Theme {
+            WP2Theme(appTheme = vm.appTheme) {
                 SideloaderScreen(vm)
             }
         }
@@ -152,11 +164,16 @@ private fun hasBlePermissions(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
     }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SideloaderScreen(vm: SideloaderViewModel) {
     val context = LocalContext.current
     val view = LocalView.current
+    val style = LocalWp2Style.current
+
+    // Auto-connect silently on startup when enabled & Bluetooth permission is already granted
+    LaunchedEffect(Unit) {
+        vm.maybeAutoConnect(hasBlePermissions(context))
+    }
 
     // Keep screen on during BLE transfer
     val busy = vm.isBusy
@@ -165,10 +182,15 @@ fun SideloaderScreen(vm: SideloaderViewModel) {
         onDispose { view.keepScreenOn = false }
     }
 
+    var showSettings by remember { mutableStateOf(false) }
     var showDevicePicker by remember { mutableStateOf(false) }
     var showLogs by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Pair<Int, String>?>(null) }
     var pendingBleAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    BackHandler(enabled = showSettings) {
+        showSettings = false
+    }
 
     val permDeniedMsg = stringResource(R.string.perm_ble_required)
     val logCopiedMsg = stringResource(R.string.log_copied)
@@ -200,259 +222,56 @@ fun SideloaderScreen(vm: SideloaderViewModel) {
         if (uri != null) vm.loadFile(uri)
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(10.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary)
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        Text(
-                            text = stringResource(R.string.app_name),
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = (-0.3).sp,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = "v${BuildConfig.VERSION_NAME}",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(
-                        onClick = { vm.checkForUpdates(manual = true) },
-                        enabled = !vm.checkingUpdate,
-                    ) {
-                        if (vm.checkingUpdate) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Rounded.SystemUpdate,
-                                contentDescription = stringResource(R.string.cd_check_updates),
-                                tint = if (vm.availableUpdate != null) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
-                                },
-                            )
-                        }
-                    }
-                    IconButton(onClick = { showLogs = true }) {
-                        Icon(
-                            imageVector = Icons.Rounded.Terminal,
-                            contentDescription = stringResource(R.string.cd_logs),
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                ),
-            )
-        },
-        containerColor = MaterialTheme.colorScheme.background,
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            // Update Available Banner
-            item {
-                AnimatedVisibility(visible = vm.availableUpdate != null) {
-                    vm.availableUpdate?.let { upd ->
-                        UpdateBannerCard(
-                            update = upd,
-                            onDownload = {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(upd.downloadUrl))
-                                runCatching { context.startActivity(intent) }
-                            },
-                            onDismiss = { vm.dismissUpdate() },
-                        )
-                    }
-                }
-            }
-
-            // Banners (success / error)
-            item {
-                AnimatedVisibility(visible = vm.bannerSuccess != null || vm.bannerError != null) {
-                    val isError = vm.bannerError != null
-                    val text = vm.bannerError ?: vm.bannerSuccess ?: ""
-                    val containerColor = if (isError) {
-                        MaterialTheme.colorScheme.errorContainer
-                    } else {
-                        SuccessGreen.copy(alpha = 0.16f)
-                    }
-                    val contentColor = if (isError) {
-                        MaterialTheme.colorScheme.onErrorContainer
-                    } else {
-                        SuccessGreen
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = containerColor,
-                        border = BorderStroke(1.dp, contentColor.copy(alpha = 0.35f)),
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                imageVector = if (isError) Icons.Rounded.ErrorOutline else Icons.Rounded.CheckCircle,
-                                contentDescription = null,
-                                tint = contentColor,
-                                modifier = Modifier.size(20.dp),
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                text = text,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = if (isError) contentColor else MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.weight(1f),
-                            )
-                            IconButton(
-                                onClick = { vm.clearBanners() },
-                                modifier = Modifier.size(28.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Close,
-                                    contentDescription = stringResource(R.string.cd_close),
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 1. Watch Connection Card
-            item {
-                WatchCard(
-                    status = vm.watchStatus,
-                    savedWatchName = vm.selectedWatchLabel,
-                    isBusy = vm.isBusy,
-                    onConnect = { runWithBlePermission { vm.connectAndRead() } },
-                    onPickWatch = {
-                        runWithBlePermission {
-                            showDevicePicker = true
-                            vm.startDeviceScan()
-                        }
-                    },
+    Wp2Backdrop {
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                ThemedTopBar(
+                    showSettings = showSettings,
+                    checkingUpdate = vm.checkingUpdate,
+                    hasUpdate = vm.availableUpdate != null,
+                    onToggleSettings = { showSettings = !showSettings },
+                    onCheckUpdates = { vm.checkForUpdates(manual = true) },
+                    onOpenLogs = { showLogs = true },
                 )
-            }
-
-            // 2. File Picker + Install Card
-            item {
-                InstallPackageCard(
-                    pkg = vm.selectedPackage,
-                    fileError = vm.fileError,
-                    watchStatus = vm.watchStatus,
-                    targetSlot = vm.targetSlot,
-                    transfer = vm.transfer,
-                    isBusy = vm.isBusy,
-                    onPickFile = { filePicker.launch(arrayOf("*/*")) },
-                    onClearFile = { vm.clearSelectedPackage() },
-                    onSelectSlot = { vm.targetSlot = it },
-                    onInstall = { runWithBlePermission { vm.installSelected() } },
-                )
-            }
-
-            // 3. Installed Apps Section
-            val ready = vm.watchStatus as? WatchStatus.Ready
-            if (ready != null) {
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 6.dp, start = 4.dp, end = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.section_installed),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            letterSpacing = 1.sp,
-                        )
-                        Text(
-                            text = stringResource(
-                                R.string.slots_count,
-                                ready.loaderState.apps.size,
-                                ready.loaderState.totalSlots,
-                            ),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-
-                if (ready.loaderState.apps.isEmpty()) {
-                    item {
-                        Card(
-                            shape = RoundedCornerShape(18.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(24.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.no_apps_installed),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
+            },
+        ) { innerPadding ->
+            AnimatedContent(
+                targetState = showSettings,
+                transitionSpec = { fadeIn() togetherWith fadeOut() },
+                label = "screen_switch",
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+            ) { inSettings ->
+                if (inSettings) {
+                    SettingsContent(
+                        vm = vm,
+                        onOpenLogs = { showLogs = true },
+                        onCheckUpdates = { vm.checkForUpdates(manual = true) },
+                        onDownloadUpdate = { url ->
+                            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                        },
+                    )
                 } else {
-                    val entries = ready.loaderState.apps.entries.toList()
-                    item {
-                        Card(
-                            shape = RoundedCornerShape(18.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                        ) {
-                            Column {
-                                entries.forEachIndexed { idx, (slot, header) ->
-                                    InstalledAppRow(
-                                        slot = slot,
-                                        header = header,
-                                        isRemoving = vm.removingSlot == slot,
-                                        enabled = !vm.isBusy,
-                                        onDelete = { pendingDelete = slot to header.name },
-                                    )
-                                    if (idx < entries.lastIndex) {
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(horizontal = 16.dp),
-                                            color = MaterialTheme.colorScheme.outlineVariant,
-                                        )
-                                    }
-                                }
+                    MainContent(
+                        vm = vm,
+                        onConnect = { runWithBlePermission { vm.connectAndRead() } },
+                        onPickWatch = {
+                            runWithBlePermission {
+                                showDevicePicker = true
+                                vm.startDeviceScan()
                             }
-                        }
-                    }
+                        },
+                        onPickFile = { filePicker.launch(arrayOf("*/*")) },
+                        onInstall = { runWithBlePermission { vm.installSelected() } },
+                        onAskDelete = { slot, name -> pendingDelete = slot to name },
+                        onDownloadUpdate = { url ->
+                            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                        },
+                    )
                 }
             }
-
-            item { Spacer(Modifier.height(24.dp)) }
         }
     }
 
@@ -460,8 +279,9 @@ fun SideloaderScreen(vm: SideloaderViewModel) {
     pendingDelete?.let { (slot, name) ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            title = { Text(stringResource(R.string.delete_title)) },
-            text = { Text(stringResource(R.string.delete_message, name, slot)) },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text(stringResource(R.string.delete_title), color = style.textPrimary) },
+            text = { Text(stringResource(R.string.delete_message, name, slot), color = style.textSecondary) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -475,7 +295,7 @@ fun SideloaderScreen(vm: SideloaderViewModel) {
             },
             dismissButton = {
                 TextButton(onClick = { pendingDelete = null }) {
-                    Text(stringResource(R.string.btn_cancel))
+                    Text(stringResource(R.string.btn_cancel), color = style.textSecondary)
                 }
             },
         )
@@ -516,67 +336,634 @@ fun SideloaderScreen(vm: SideloaderViewModel) {
 }
 
 @Composable
+private fun ThemedTopBar(
+    showSettings: Boolean,
+    checkingUpdate: Boolean,
+    hasUpdate: Boolean,
+    onToggleSettings: () -> Unit,
+    onCheckUpdates: () -> Unit,
+    onOpenLogs: () -> Unit,
+) {
+    val style = LocalWp2Style.current
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding(),
+    ) {
+        DotMatrixOverlay(modifier = Modifier.matchParentSize())
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(style.accentDot),
+            )
+            Spacer(Modifier.width(10.dp))
+            val rawTitle = if (showSettings) {
+                stringResource(R.string.settings_title)
+            } else {
+                stringResource(R.string.app_name)
+            }
+            Text(
+                text = if (style.monoTitle) rawTitle.uppercase() else rawTitle,
+                fontFamily = if (style.monoTitle) FontFamily.Monospace else FontFamily.Default,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                letterSpacing = if (style.monoTitle) 0.5.sp else (-0.3).sp,
+                color = style.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (!showSettings) {
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "v${BuildConfig.VERSION_NAME}",
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = style.textMuted,
+                )
+            }
+            Spacer(Modifier.weight(1f))
+
+            if (!showSettings) {
+                RoundHeaderButton(
+                    icon = Icons.Rounded.SystemUpdate,
+                    contentDescription = stringResource(R.string.cd_check_updates),
+                    tint = if (hasUpdate) style.accentDot else style.textPrimary,
+                    loading = checkingUpdate,
+                    onClick = onCheckUpdates,
+                )
+                Spacer(Modifier.width(8.dp))
+                RoundHeaderButton(
+                    icon = Icons.Rounded.Terminal,
+                    contentDescription = stringResource(R.string.cd_logs),
+                    tint = style.textPrimary,
+                    onClick = onOpenLogs,
+                )
+                Spacer(Modifier.width(8.dp))
+            }
+
+            RoundHeaderButton(
+                icon = if (showSettings) Icons.AutoMirrored.Rounded.ArrowBack else Icons.Rounded.Settings,
+                contentDescription = stringResource(if (showSettings) R.string.cd_back else R.string.cd_settings),
+                tint = style.textPrimary,
+                onClick = onToggleSettings,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RoundHeaderButton(
+    icon: ImageVector,
+    contentDescription: String,
+    tint: Color,
+    loading: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val style = LocalWp2Style.current
+    Box(
+        modifier = Modifier
+            .size(38.dp)
+            .clip(CircleShape)
+            .background(style.secondaryBtnBg)
+            .border(1.dp, style.secondaryBtnBorder, CircleShape)
+            .clickable(enabled = !loading, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (loading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp,
+                color = tint,
+            )
+        } else {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = tint,
+                modifier = Modifier.size(19.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun MainContent(
+    vm: SideloaderViewModel,
+    onConnect: () -> Unit,
+    onPickWatch: () -> Unit,
+    onPickFile: () -> Unit,
+    onInstall: () -> Unit,
+    onAskDelete: (Int, String) -> Unit,
+    onDownloadUpdate: (String) -> Unit,
+) {
+    val style = LocalWp2Style.current
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        // Update Available Banner
+        item {
+            AnimatedVisibility(visible = vm.availableUpdate != null) {
+                vm.availableUpdate?.let { upd ->
+                    UpdateBannerCard(
+                        update = upd,
+                        onDownload = { onDownloadUpdate(upd.downloadUrl) },
+                        onDismiss = { vm.dismissUpdate() },
+                    )
+                }
+            }
+        }
+
+        // Success / Error Banners
+        item {
+            AnimatedVisibility(visible = vm.bannerSuccess != null || vm.bannerError != null) {
+                StatusBanner(
+                    isError = vm.bannerError != null,
+                    text = vm.bannerError ?: vm.bannerSuccess ?: "",
+                    onDismiss = { vm.clearBanners() },
+                )
+            }
+        }
+
+        // 1. Watch Connection Hero Card
+        item {
+            WatchCard(
+                status = vm.watchStatus,
+                savedWatchName = vm.selectedWatchLabel,
+                autoConnect = vm.autoConnect,
+                isBusy = vm.isBusy,
+                onConnect = onConnect,
+                onPickWatch = onPickWatch,
+            )
+        }
+
+        // 2. Package Picker + Install Card
+        item {
+            InstallPackageCard(
+                pkg = vm.selectedPackage,
+                fileError = vm.fileError,
+                watchStatus = vm.watchStatus,
+                targetSlot = vm.targetSlot,
+                transfer = vm.transfer,
+                isBusy = vm.isBusy,
+                onPickFile = onPickFile,
+                onClearFile = { vm.clearSelectedPackage() },
+                onSelectSlot = { vm.targetSlot = it },
+                onInstall = onInstall,
+            )
+        }
+
+        // 3. Installed Apps Section
+        val ready = vm.watchStatus as? WatchStatus.Ready
+        if (ready != null) {
+            item {
+                Wp2ThemedCard {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "${stringResource(R.string.section_installed)} (${ready.loaderState.apps.size} / ${ready.loaderState.totalSlots})",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = style.textSecondary,
+                            letterSpacing = 0.8.sp,
+                        )
+                        Text(
+                            text = stringResource(R.string.slots_free_count, ready.loaderState.freeSlots),
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = style.textMuted,
+                        )
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    if (ready.loaderState.apps.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 18.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.no_apps_installed),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = style.textSecondary,
+                            )
+                        }
+                    } else {
+                        val entries = ready.loaderState.apps.entries.toList()
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            entries.forEach { (slot, header) ->
+                                InstalledAppRow(
+                                    slot = slot,
+                                    header = header,
+                                    isRemoving = vm.removingSlot == slot,
+                                    enabled = !vm.isBusy,
+                                    onDelete = { onAskDelete(slot, header.name) },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item { Spacer(Modifier.height(24.dp)) }
+    }
+}
+
+@Composable
+private fun SettingsContent(
+    vm: SideloaderViewModel,
+    onOpenLogs: () -> Unit,
+    onCheckUpdates: () -> Unit,
+    onDownloadUpdate: (String) -> Unit,
+) {
+    val style = LocalWp2Style.current
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        // Optional update / status banner right in Settings too
+        item {
+            AnimatedVisibility(visible = vm.availableUpdate != null) {
+                vm.availableUpdate?.let { upd ->
+                    UpdateBannerCard(
+                        update = upd,
+                        onDownload = { onDownloadUpdate(upd.downloadUrl) },
+                        onDismiss = { vm.dismissUpdate() },
+                    )
+                }
+            }
+        }
+        item {
+            AnimatedVisibility(visible = vm.bannerSuccess != null || vm.bannerError != null) {
+                StatusBanner(
+                    isError = vm.bannerError != null,
+                    text = vm.bannerError ?: vm.bannerSuccess ?: "",
+                    onDismiss = { vm.clearBanners() },
+                )
+            }
+        }
+
+        // 1. Auto-Connect Hero Card
+        item {
+            Wp2ThemedCard(elevated = true) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.settings_autoconnect_title),
+                            fontSize = 15.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = style.textPrimary,
+                        )
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            text = stringResource(R.string.settings_autoconnect_sub),
+                            fontSize = 12.5.sp,
+                            color = style.textSecondary,
+                            lineHeight = 17.sp,
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Switch(
+                        checked = vm.autoConnect,
+                        onCheckedChange = { vm.setAutoConnectEnabled(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = style.primaryBtnInk,
+                            checkedTrackColor = style.primaryBtnTop,
+                            uncheckedThumbColor = style.textMuted,
+                            uncheckedTrackColor = style.secondaryBtnBg,
+                            uncheckedBorderColor = style.secondaryBtnBorder,
+                        ),
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                Wp2SlotSurface {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.settings_saved_watch),
+                                fontSize = 11.sp,
+                                color = style.textMuted,
+                            )
+                            val savedAddr = vm.selectedAddress
+                            val savedLabel = if (savedAddr != null) {
+                                val name = vm.selectedWatchLabel ?: "CMF Watch Pro 2"
+                                "$name · ${savedAddr.takeLast(5)}"
+                            } else {
+                                stringResource(R.string.settings_saved_watch_none)
+                            }
+                            Text(
+                                text = savedLabel,
+                                fontSize = 12.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = style.textPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        if (vm.selectedAddress != null) {
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = stringResource(R.string.settings_forget),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = style.badgeInk,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(style.badgeBg)
+                                    .clickable { vm.clearSavedWatch() }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Theme Selector Card (4 themes matching HTML mockups)
+        item {
+            Wp2ThemedCard {
+                Text(
+                    text = stringResource(R.string.settings_appearance),
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = style.textSecondary,
+                    letterSpacing = 0.8.sp,
+                )
+                Spacer(Modifier.height(12.dp))
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AppTheme.entries.forEach { themeOpt ->
+                        val active = vm.appTheme == themeOpt
+                        val (nameRes, tagRes) = when (themeOpt) {
+                            AppTheme.CMF_NOTHING -> R.string.theme_cmf_name to R.string.theme_cmf_tag
+                            AppTheme.LIQUID_GLASS -> R.string.theme_glass_name to R.string.theme_glass_tag
+                            AppTheme.NOTHING_LIGHT -> R.string.theme_light_name to R.string.theme_light_tag
+                            AppTheme.AMOLED_STEALTH -> R.string.theme_oled_name to R.string.theme_oled_tag
+                        }
+                        val rowShape = RoundedCornerShape(14.dp)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(rowShape)
+                                .background(if (active) style.badgeBg else style.slotBg)
+                                .border(
+                                    width = 1.dp,
+                                    color = if (active) style.accentDot else style.slotBorder,
+                                    shape = rowShape,
+                                )
+                                .clickable { vm.setTheme(themeOpt) }
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .clip(CircleShape)
+                                    .background(themeOpt.swatchColor)
+                                    .border(1.dp, style.textMuted.copy(alpha = 0.7f), CircleShape),
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(nameRes),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = style.textPrimary,
+                                )
+                                Text(
+                                    text = stringResource(tagRes),
+                                    fontSize = 11.5.sp,
+                                    color = style.textSecondary,
+                                )
+                            }
+                            if (active) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Check,
+                                    contentDescription = null,
+                                    tint = style.accentDot,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Updates & BLE Logs Cards
+        item {
+            Wp2ThemedCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.settings_updates_title),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = style.textPrimary,
+                        )
+                        Text(
+                            text = stringResource(R.string.settings_updates_sub, BuildConfig.VERSION_NAME),
+                            fontSize = 11.5.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = style.textMuted,
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(style.secondaryBtnBg)
+                            .border(1.dp, style.secondaryBtnBorder, CircleShape)
+                            .clickable(enabled = !vm.checkingUpdate, onClick = onCheckUpdates)
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (vm.checkingUpdate) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp,
+                                color = style.secondaryBtnInk,
+                            )
+                        } else {
+                            Text(
+                                text = stringResource(R.string.settings_check_btn),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = style.secondaryBtnInk,
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                Wp2SlotSurface(onClick = onOpenLogs) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Terminal,
+                            contentDescription = null,
+                            tint = style.textSecondary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.settings_logs_title),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = style.textPrimary,
+                            )
+                            Text(
+                                text = stringResource(R.string.settings_logs_sub, vm.logs.size),
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = style.textMuted,
+                            )
+                        }
+                        Text(
+                            text = stringResource(R.string.settings_open_btn),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = style.badgeInk,
+                        )
+                    }
+                }
+            }
+        }
+
+        item { Spacer(Modifier.height(24.dp)) }
+    }
+}
+
+@Composable
+private fun StatusBanner(
+    isError: Boolean,
+    text: String,
+    onDismiss: () -> Unit,
+) {
+    val style = LocalWp2Style.current
+    val accent = if (isError) MaterialTheme.colorScheme.error else style.success
+    val bg = if (isError) MaterialTheme.colorScheme.errorContainer else accent.copy(alpha = 0.14f)
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = bg,
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.38f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = if (isError) Icons.Rounded.ErrorOutline else Icons.Rounded.CheckCircle,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (isError) MaterialTheme.colorScheme.onErrorContainer else style.textPrimary,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.size(28.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = stringResource(R.string.cd_close),
+                    tint = style.textSecondary,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun UpdateBannerCard(
     update: UpdateInfo,
     onDownload: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Rounded.SystemUpdate,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(22.dp),
+    val style = LocalWp2Style.current
+    Wp2ThemedCard(elevated = true, contentPadding = PaddingValues(14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Rounded.SystemUpdate,
+                contentDescription = null,
+                tint = style.accentDot,
+                modifier = Modifier.size(22.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.update_available_title, update.latestVersion),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = style.textPrimary,
                 )
-                Spacer(Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.update_available_title, update.latestVersion),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        text = stringResource(R.string.update_available_sub, BuildConfig.VERSION_NAME),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.size(28.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Close,
-                        contentDescription = stringResource(R.string.cd_close),
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
+                Text(
+                    text = stringResource(R.string.update_available_sub, BuildConfig.VERSION_NAME),
+                    fontSize = 12.sp,
+                    color = style.textSecondary,
+                )
             }
-            Spacer(Modifier.height(10.dp))
-            Button(
-                onClick = onDownload,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.size(28.dp),
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.Download,
-                    contentDescription = null,
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = stringResource(R.string.cd_close),
+                    tint = style.textSecondary,
                     modifier = Modifier.size(18.dp),
                 )
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.update_download_btn))
             }
         }
+        Spacer(Modifier.height(10.dp))
+        PrimaryPillButton(
+            text = stringResource(R.string.update_download_btn),
+            icon = Icons.Rounded.Download,
+            enabled = true,
+            onClick = onDownload,
+        )
     }
 }
 
@@ -584,157 +971,154 @@ private fun UpdateBannerCard(
 private fun WatchCard(
     status: WatchStatus,
     savedWatchName: String?,
+    autoConnect: Boolean,
     isBusy: Boolean,
     onConnect: () -> Unit,
     onPickWatch: () -> Unit,
 ) {
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Column(modifier = Modifier.padding(18.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val iconBg = when (status) {
-                    is WatchStatus.Ready -> SuccessGreen.copy(alpha = 0.16f)
-                    is WatchStatus.Error -> MaterialTheme.colorScheme.errorContainer
-                    is WatchStatus.StockFirmware -> WarnAmber.copy(alpha = 0.16f)
-                    else -> MaterialTheme.colorScheme.primaryContainer
-                }
-                val iconTint = when (status) {
-                    is WatchStatus.Ready -> SuccessGreen
-                    is WatchStatus.Error -> MaterialTheme.colorScheme.error
-                    is WatchStatus.StockFirmware -> WarnAmber
-                    else -> MaterialTheme.colorScheme.primary
-                }
-                Box(
-                    modifier = Modifier
-                        .size(46.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(iconBg),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (status is WatchStatus.Connecting) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(22.dp),
-                            strokeWidth = 2.5.dp,
-                            color = iconTint,
-                        )
-                    } else {
-                        Icon(
-                            imageVector = when (status) {
-                                is WatchStatus.Ready -> Icons.Rounded.BluetoothConnected
-                                else -> Icons.Rounded.Watch
-                            },
-                            contentDescription = null,
-                            tint = iconTint,
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                }
-
-                Spacer(Modifier.width(14.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = when (status) {
-                            is WatchStatus.Idle -> savedWatchName ?: "CMF Watch Pro 2"
-                            is WatchStatus.Connecting -> stringResource(R.string.watch_connecting)
-                            is WatchStatus.Ready -> status.watchName
-                            is WatchStatus.StockFirmware -> status.watchName
-                            is WatchStatus.Error -> savedWatchName ?: stringResource(R.string.watch_connect_error)
-                        },
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = when (status) {
-                            is WatchStatus.Idle -> stringResource(R.string.watch_idle_hint)
-                            is WatchStatus.Connecting -> stringResource(R.string.watch_connecting_hint)
-                            is WatchStatus.Ready -> {
-                                val st = status.loaderState
-                                val loaderText = if (st.loader != null) {
-                                    stringResource(R.string.watch_loader_ok)
-                                } else {
-                                    stringResource(R.string.watch_loader_missing)
-                                }
-                                stringResource(
-                                    R.string.watch_ready_summary,
-                                    st.stub.version,
-                                    loaderText,
-                                    st.freeSlots,
-                                    st.totalSlots,
-                                )
-                            }
-                            is WatchStatus.StockFirmware -> stringResource(R.string.watch_stock_firmware)
-                            is WatchStatus.Error -> status.message
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = when (status) {
-                            is WatchStatus.Error -> MaterialTheme.colorScheme.error
-                            is WatchStatus.StockFirmware -> WarnAmber
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                }
-            }
-
-            if (status is WatchStatus.Ready) {
-                Spacer(Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    InfoPill("STUB v${status.loaderState.stub.version}")
-                    val loaderCrc = status.loaderState.loader?.crc?.let { "%08x".format(it) }
-                        ?: stringResource(R.string.pill_loader_none)
-                    InfoPill("LOADER $loaderCrc")
-                    status.loaderState.stub.abiMinor?.let { InfoPill("ABI 1.$it") }
-                }
-            }
-
-            Spacer(Modifier.height(14.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+    val style = LocalWp2Style.current
+    Wp2ThemedCard(elevated = true) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Glowing live status indicator dot or spinner
+            Box(
+                modifier = Modifier.size(24.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                FilledTonalButton(
-                    onClick = onConnect,
-                    enabled = !isBusy,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp),
-                ) {
-                    Icon(
-                        imageVector = if (status is WatchStatus.Ready) Icons.Rounded.Refresh else Icons.Rounded.Bluetooth,
-                        contentDescription = null,
+                if (status is WatchStatus.Connecting) {
+                    CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = style.accentDot,
                     )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        stringResource(
-                            if (status is WatchStatus.Ready) R.string.btn_refresh else R.string.btn_connect
-                        )
+                } else {
+                    val dotColor = when (status) {
+                        is WatchStatus.Ready -> style.success
+                        is WatchStatus.Error -> MaterialTheme.colorScheme.error
+                        is WatchStatus.StockFirmware -> WarnAmber
+                        else -> style.textMuted
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .shadow(
+                                elevation = if (status is WatchStatus.Ready) 8.dp else 0.dp,
+                                shape = CircleShape,
+                                ambientColor = dotColor,
+                                spotColor = dotColor,
+                            )
+                            .clip(CircleShape)
+                            .background(dotColor),
                     )
-                }
-
-                OutlinedButton(
-                    onClick = onPickWatch,
-                    enabled = !isBusy,
-                    shape = RoundedCornerShape(12.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.BluetoothSearching,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(stringResource(R.string.btn_pick))
                 }
             }
+
+            Spacer(Modifier.width(10.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = when (status) {
+                        is WatchStatus.Idle -> savedWatchName ?: "CMF Watch Pro 2"
+                        is WatchStatus.Connecting -> stringResource(R.string.watch_connecting)
+                        is WatchStatus.Ready -> status.watchName
+                        is WatchStatus.StockFirmware -> status.watchName
+                        is WatchStatus.Error -> savedWatchName ?: stringResource(R.string.watch_connect_error)
+                    },
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = style.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = when (status) {
+                        is WatchStatus.Idle -> stringResource(R.string.watch_idle_hint)
+                        is WatchStatus.Connecting -> stringResource(R.string.watch_connecting_hint)
+                        is WatchStatus.Ready -> {
+                            val st = status.loaderState
+                            val loaderText = if (st.loader != null) {
+                                stringResource(R.string.watch_loader_ok)
+                            } else {
+                                stringResource(R.string.watch_loader_missing)
+                            }
+                            stringResource(
+                                R.string.watch_ready_summary,
+                                st.stub.version,
+                                loaderText,
+                                st.freeSlots,
+                                st.totalSlots,
+                            )
+                        }
+                        is WatchStatus.StockFirmware -> stringResource(R.string.watch_stock_firmware)
+                        is WatchStatus.Error -> status.message
+                    },
+                    fontSize = 12.sp,
+                    fontFamily = if (status is WatchStatus.Ready) FontFamily.Monospace else FontFamily.Default,
+                    color = when (status) {
+                        is WatchStatus.Error -> MaterialTheme.colorScheme.error
+                        is WatchStatus.StockFirmware -> WarnAmber
+                        else -> style.textSecondary
+                    },
+                )
+            }
+
+            if (autoConnect) {
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.badge_auto),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    color = style.badgeInk,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(style.badgeBg)
+                        .padding(horizontal = 9.dp, vertical = 4.dp),
+                )
+            }
+        }
+
+        if (status is WatchStatus.Ready) {
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                InfoPill("STUB v${status.loaderState.stub.version}")
+                val loaderCrc = status.loaderState.loader?.crc?.let { "%08x".format(it) }
+                    ?: stringResource(R.string.pill_loader_none)
+                InfoPill("LOADER $loaderCrc")
+                status.loaderState.stub.abiMinor?.let { InfoPill("ABI 1.$it") }
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            SecondaryActionButton(
+                text = stringResource(
+                    if (status is WatchStatus.Ready) R.string.btn_refresh else R.string.btn_connect,
+                ),
+                icon = if (status is WatchStatus.Ready) Icons.Rounded.Refresh else Icons.Rounded.Bluetooth,
+                enabled = !isBusy,
+                modifier = Modifier.weight(1f),
+                onClick = onConnect,
+            )
+            SecondaryActionButton(
+                text = stringResource(R.string.btn_pick),
+                icon = Icons.Rounded.BluetoothSearching,
+                enabled = !isBusy,
+                modifier = Modifier.weight(1f),
+                onClick = onPickWatch,
+            )
         }
     }
 }
@@ -752,257 +1136,345 @@ private fun InstallPackageCard(
     onSelectSlot: (Int?) -> Unit,
     onInstall: () -> Unit,
 ) {
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Column(modifier = Modifier.padding(18.dp)) {
+    val style = LocalWp2Style.current
+    Wp2ThemedCard {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
                 text = stringResource(R.string.section_install_pkg),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 1.sp,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = style.textSecondary,
+                letterSpacing = 0.8.sp,
             )
+            if (pkg != null) {
+                val ok = pkg.inspection.crcValid
+                Text(
+                    text = stringResource(if (ok) R.string.pill_crc_ok else R.string.pill_crc_bad),
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (ok) style.success else MaterialTheme.colorScheme.error,
+                )
+            }
+        }
 
-            Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(12.dp))
 
-            if (pkg == null) {
-                Surface(
-                    onClick = onPickFile,
-                    enabled = !isBusy,
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        if (pkg == null) {
+            Wp2SlotSurface(onClick = onPickFile, enabled = !isBusy) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp, horizontal = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 26.dp, horizontal = 16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.FileOpen,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(34.dp),
-                        )
-                        Spacer(Modifier.height(10.dp))
-                        Text(
-                            text = stringResource(R.string.pick_file_title),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = stringResource(R.string.pick_file_hint),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            } else {
-                val ins = pkg.inspection
-                val hdr = ins.header
-
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    border = BorderStroke(
-                        1.dp,
-                        if (ins.crcValid) MaterialTheme.colorScheme.outlineVariant else MaterialTheme.colorScheme.error,
-                    ),
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = hdr.name,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                Text(
-                                    text = pkg.fileName,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            if (!isBusy) {
-                                TextButton(onClick = onPickFile) {
-                                    Text(stringResource(R.string.btn_change_file))
-                                }
-                                IconButton(
-                                    onClick = onClearFile,
-                                    modifier = Modifier.size(32.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Close,
-                                        contentDescription = stringResource(R.string.cd_clear_file),
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(Modifier.height(10.dp))
-
-                        Row(
-                            modifier = Modifier.horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            InfoPill(
-                                stringResource(
-                                    if (hdr.isLoader) R.string.pill_kind_loader else R.string.pill_kind_app
-                                )
-                            )
-                            InfoPill("v${formatVersion(hdr.version)}")
-                            InfoPill(stringResource(R.string.pill_size_kb, ins.totalBytes / 1024f))
-                            InfoPill("ABI ${ins.abiText}")
-                            InfoPill(
-                                text = stringResource(
-                                    if (ins.crcValid) R.string.pill_crc_ok else R.string.pill_crc_bad
-                                ),
-                                tint = if (ins.crcValid) SuccessGreen else MaterialTheme.colorScheme.error,
-                            )
-                        }
-                    }
-                }
-
-                // Slot selector (only for apps, not loader)
-                if (hdr.isApp && watchStatus is WatchStatus.Ready) {
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        text = stringResource(R.string.slot_selector_label),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    Icon(
+                        imageVector = Icons.Rounded.FileOpen,
+                        contentDescription = null,
+                        tint = style.accentDot,
+                        modifier = Modifier.size(32.dp),
                     )
-                    Spacer(Modifier.height(6.dp))
-                    val totalSlots = watchStatus.loaderState.totalSlots
-                    val existingSlot = watchStatus.loaderState.apps.entries
-                        .firstOrNull { it.value.name == hdr.name }?.key
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = stringResource(R.string.pick_file_title),
+                        fontSize = 14.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = style.textPrimary,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.pick_file_hint),
+                        fontSize = 12.sp,
+                        color = style.textSecondary,
+                    )
+                }
+            }
+        } else {
+            val ins = pkg.inspection
+            val hdr = ins.header
+
+            Wp2SlotSurface(
+                borderColor = if (ins.crcValid) style.slotBorder else MaterialTheme.colorScheme.error,
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = hdr.name,
+                                fontSize = 15.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = style.textPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = pkg.fileName,
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = style.textSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        if (!isBusy) {
+                            Text(
+                                text = stringResource(R.string.btn_change_file),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = style.secondaryBtnInk,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(style.secondaryBtnBg)
+                                    .border(1.dp, style.secondaryBtnBorder, RoundedCornerShape(10.dp))
+                                    .clickable(onClick = onPickFile)
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            IconButton(
+                                onClick = onClearFile,
+                                modifier = Modifier.size(30.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = stringResource(R.string.cd_clear_file),
+                                    tint = style.textSecondary,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
                     Row(
                         modifier = Modifier.horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        FilterChip(
-                            selected = targetSlot == null,
-                            onClick = { onSelectSlot(null) },
-                            enabled = !isBusy,
-                            label = {
-                                Text(
-                                    if (existingSlot != null) {
-                                        stringResource(R.string.slot_auto_update, existingSlot)
-                                    } else {
-                                        stringResource(R.string.slot_auto)
-                                    }
-                                )
-                            },
+                        InfoPill(
+                            stringResource(
+                                if (hdr.isLoader) R.string.pill_kind_loader else R.string.pill_kind_app,
+                            ),
                         )
-                        for (slot in 0 until totalSlots) {
-                            val occupant = watchStatus.loaderState.apps[slot]
-                            FilterChip(
-                                selected = targetSlot == slot,
-                                onClick = { onSelectSlot(slot) },
-                                enabled = !isBusy,
-                                label = {
-                                    Text(
-                                        if (occupant != null) "#$slot (${occupant.name})"
-                                        else "#$slot"
-                                    )
-                                },
-                            )
-                        }
+                        InfoPill("v${formatVersion(hdr.version)}")
+                        InfoPill(stringResource(R.string.pill_size_kb, ins.totalBytes / 1024f))
+                        InfoPill("ABI ${ins.abiText}")
                     }
                 }
             }
 
-            if (fileError != null) {
-                Spacer(Modifier.height(10.dp))
+            // Slot selector (only for apps, not loader)
+            if (hdr.isApp && watchStatus is WatchStatus.Ready) {
+                Spacer(Modifier.height(12.dp))
                 Text(
-                    text = fileError,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
+                    text = stringResource(R.string.slot_selector_label),
+                    fontSize = 12.sp,
+                    color = style.textSecondary,
                 )
-            }
-
-            // Progress bar during BLE transfer
-            if (transfer != null) {
-                Spacer(Modifier.height(16.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = transfer.stage,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    val pct = (transfer.fraction * 100).toInt()
-                    val kbText = stringResource(
-                        R.string.transfer_kb,
-                        transfer.sentBytes / 1024f,
-                        transfer.totalBytes / 1024f,
-                    )
-                    Text(
-                        text = "$pct% ($kbText)",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Medium,
-                    )
-                }
                 Spacer(Modifier.height(6.dp))
-                if (transfer.fraction <= 0f) {
-                    LinearProgressIndicator(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(4.dp)),
+                val totalSlots = watchStatus.loaderState.totalSlots
+                val existingSlot = watchStatus.loaderState.apps.entries
+                    .firstOrNull { it.value.name == hdr.name }?.key
+                val chipColors = FilterChipDefaults.filterChipColors(
+                    containerColor = style.slotBg,
+                    labelColor = style.textSecondary,
+                    selectedContainerColor = style.badgeBg,
+                    selectedLabelColor = style.badgeInk,
+                )
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = targetSlot == null,
+                        onClick = { onSelectSlot(null) },
+                        enabled = !isBusy,
+                        colors = chipColors,
+                        label = {
+                            Text(
+                                if (existingSlot != null) {
+                                    stringResource(R.string.slot_auto_update, existingSlot)
+                                } else {
+                                    stringResource(R.string.slot_auto)
+                                },
+                            )
+                        },
                     )
-                } else {
-                    LinearProgressIndicator(
-                        progress = { transfer.fraction },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(4.dp)),
-                    )
+                    for (slot in 0 until totalSlots) {
+                        val occupant = watchStatus.loaderState.apps[slot]
+                        FilterChip(
+                            selected = targetSlot == slot,
+                            onClick = { onSelectSlot(slot) },
+                            enabled = !isBusy,
+                            colors = chipColors,
+                            label = {
+                                Text(
+                                    if (occupant != null) "#$slot (${occupant.name})"
+                                    else "#$slot",
+                                )
+                            },
+                        )
+                    }
                 }
             }
+        }
 
-            Spacer(Modifier.height(16.dp))
+        if (fileError != null) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = fileError,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
 
-            Button(
-                onClick = onInstall,
-                enabled = pkg != null && pkg.inspection.crcValid && !isBusy,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                shape = RoundedCornerShape(14.dp),
+        // Progress bar during BLE transfer
+        if (transfer != null) {
+            Spacer(Modifier.height(14.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.InstallMobile,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                )
-                Spacer(Modifier.width(10.dp))
                 Text(
-                    text = stringResource(
-                        when {
-                            transfer != null -> R.string.btn_installing
-                            pkg == null -> R.string.btn_pick_first
-                            pkg.inspection.header.isLoader -> R.string.btn_install_loader
-                            else -> R.string.btn_install_app
-                        }
-                    ),
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp,
+                    text = transfer.stage,
+                    fontSize = 12.sp,
+                    color = style.textSecondary,
+                )
+                val pct = (transfer.fraction * 100).toInt()
+                val kbText = stringResource(
+                    R.string.transfer_kb,
+                    transfer.sentBytes / 1024f,
+                    transfer.totalBytes / 1024f,
+                )
+                Text(
+                    text = "$pct% ($kbText)",
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Medium,
+                    color = style.textPrimary,
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            val trackColor = style.secondaryBtnBg
+            if (transfer.fraction <= 0f) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp)),
+                    color = style.primaryBtnTop,
+                    trackColor = trackColor,
+                )
+            } else {
+                LinearProgressIndicator(
+                    progress = { transfer.fraction },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp)),
+                    color = style.primaryBtnTop,
+                    trackColor = trackColor,
                 )
             }
         }
+
+        Spacer(Modifier.height(14.dp))
+
+        PrimaryPillButton(
+            text = stringResource(
+                when {
+                    transfer != null -> R.string.btn_installing
+                    pkg == null -> R.string.btn_pick_first
+                    pkg.inspection.header.isLoader -> R.string.btn_install_loader
+                    else -> R.string.btn_install_app
+                },
+            ),
+            icon = Icons.Rounded.InstallMobile,
+            enabled = pkg != null && pkg.inspection.crcValid && !isBusy,
+            onClick = onInstall,
+        )
+    }
+}
+
+@Composable
+private fun PrimaryPillButton(
+    text: String,
+    icon: ImageVector,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val style = LocalWp2Style.current
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(50.dp)
+            .alpha(if (enabled) 1f else 0.42f)
+            .clip(CircleShape)
+            .background(Brush.verticalGradient(listOf(style.primaryBtnTop, style.primaryBtnBottom)))
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = style.primaryBtnInk,
+                modifier = Modifier.size(19.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = text,
+                color = style.primaryBtnInk,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.5.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SecondaryActionButton(
+    text: String,
+    icon: ImageVector,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val style = LocalWp2Style.current
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        modifier = modifier
+            .height(42.dp)
+            .alpha(if (enabled) 1f else 0.45f)
+            .clip(shape)
+            .background(style.secondaryBtnBg)
+            .border(1.dp, style.secondaryBtnBorder, shape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = style.secondaryBtnInk,
+            modifier = Modifier.size(17.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = text,
+            color = style.secondaryBtnInk,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -1014,58 +1486,63 @@ private fun InstalledAppRow(
     enabled: Boolean,
     onDelete: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Surface(
-            shape = RoundedCornerShape(10.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
+    val style = LocalWp2Style.current
+    Wp2SlotSurface {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "#$slot",
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                style = MaterialTheme.typography.labelLarge,
+                text = "%02d".format(slot),
+                fontSize = 11.5.sp,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = header.name,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = "v${formatVersion(header.version)}  •  CRC %08x".format(header.crc),
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        if (isRemoving) {
-            CircularProgressIndicator(
+                color = style.badgeInk,
                 modifier = Modifier
-                    .padding(8.dp)
-                    .size(20.dp),
-                strokeWidth = 2.dp,
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(style.badgeBg)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
             )
-        } else {
-            IconButton(
-                onClick = onDelete,
-                enabled = enabled,
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.DeleteOutline,
-                    contentDescription = stringResource(R.string.cd_delete),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = header.name,
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = style.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                Text(
+                    text = "v${formatVersion(header.version)}  •  CRC %08x".format(header.crc),
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = style.textMuted,
+                )
+            }
+            if (isRemoving) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .padding(8.dp)
+                        .size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = style.accentDot,
+                )
+            } else {
+                IconButton(
+                    onClick = onDelete,
+                    enabled = enabled,
+                    modifier = Modifier.size(34.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.DeleteOutline,
+                        contentDescription = stringResource(R.string.cd_delete),
+                        tint = style.textMuted,
+                        modifier = Modifier.size(19.dp),
+                    )
+                }
             }
         }
     }
@@ -1073,21 +1550,20 @@ private fun InstalledAppRow(
 
 @Composable
 private fun InfoPill(text: String, tint: Color? = null) {
-    val bg = tint?.copy(alpha = 0.14f) ?: MaterialTheme.colorScheme.surfaceVariant
-    val fg = tint ?: MaterialTheme.colorScheme.onSurfaceVariant
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = bg,
-    ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelSmall,
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.SemiBold,
-            color = fg,
-        )
-    }
+    val style = LocalWp2Style.current
+    val bg = tint?.copy(alpha = 0.14f) ?: style.badgeBg
+    val fg = tint ?: style.badgeInk
+    Text(
+        text = text,
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(bg)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        fontSize = 11.sp,
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.SemiBold,
+        color = fg,
+    )
 }
 
 @Composable
@@ -1099,13 +1575,23 @@ private fun DevicePickerDialog(
     onSelect: (DiscoveredWatch) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val style = LocalWp2Style.current
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.picker_title), modifier = Modifier.weight(1f))
+                Text(
+                    text = stringResource(R.string.picker_title),
+                    color = style.textPrimary,
+                    modifier = Modifier.weight(1f),
+                )
                 if (scanning) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = style.accentDot,
+                    )
                 }
             }
         },
@@ -1122,46 +1608,48 @@ private fun DevicePickerDialog(
                 if (devices.isEmpty()) {
                     Text(
                         text = stringResource(
-                            if (scanning) R.string.picker_scanning else R.string.picker_empty
+                            if (scanning) R.string.picker_scanning else R.string.picker_empty,
                         ),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = style.textSecondary,
                     )
                 } else {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(devices, key = { it.address }) { dev ->
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = if (dev.isCmfWatch) {
-                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                },
+                            val rowShape = RoundedCornerShape(12.dp)
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { onSelect(dev) },
+                                    .clip(rowShape)
+                                    .background(if (dev.isCmfWatch) style.badgeBg else style.slotBg)
+                                    .border(
+                                        1.dp,
+                                        if (dev.isCmfWatch) style.accentDot.copy(alpha = 0.5f) else style.slotBorder,
+                                        rowShape,
+                                    )
+                                    .clickable { onSelect(dev) }
+                                    .padding(12.dp),
                             ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text(
-                                        text = dev.name,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = if (dev.isCmfWatch) FontWeight.Bold else FontWeight.Medium,
-                                    )
-                                    val src = when (dev.source) {
-                                        DiscoveredWatch.Source.CONNECTED -> stringResource(R.string.picker_src_connected)
-                                        DiscoveredWatch.Source.BONDED -> stringResource(R.string.picker_src_bonded)
-                                        DiscoveredWatch.Source.SCANNED -> {
-                                            val base = stringResource(R.string.picker_src_nearby)
-                                            "$base${dev.rssi?.let { " ($it dBm)" } ?: ""}"
-                                        }
+                                Text(
+                                    text = dev.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (dev.isCmfWatch) FontWeight.Bold else FontWeight.Medium,
+                                    color = style.textPrimary,
+                                )
+                                val src = when (dev.source) {
+                                    DiscoveredWatch.Source.CONNECTED -> stringResource(R.string.picker_src_connected)
+                                    DiscoveredWatch.Source.BONDED -> stringResource(R.string.picker_src_bonded)
+                                    DiscoveredWatch.Source.SCANNED -> {
+                                        val base = stringResource(R.string.picker_src_nearby)
+                                        "$base${dev.rssi?.let { " ($it dBm)" } ?: ""}"
                                     }
-                                    Text(
-                                        text = "${dev.address} • $src",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
                                 }
+                                Text(
+                                    text = "${dev.address} • $src",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = style.textSecondary,
+                                )
                             }
                         }
                     }
@@ -1170,12 +1658,12 @@ private fun DevicePickerDialog(
         },
         confirmButton = {
             TextButton(onClick = onRescan, enabled = !scanning) {
-                Text(stringResource(R.string.btn_rescan))
+                Text(stringResource(R.string.btn_rescan), color = style.accentDot)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.btn_close))
+                Text(stringResource(R.string.btn_close), color = style.textSecondary)
             }
         },
     )
@@ -1188,22 +1676,25 @@ private fun LogDialog(
     onClear: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val style = LocalWp2Style.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.logs_title)) },
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = { Text(stringResource(R.string.logs_title), color = style.textPrimary) },
         text = {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 120.dp, max = 380.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(style.slotBg)
+                    .border(1.dp, style.slotBorder, RoundedCornerShape(12.dp))
                     .padding(10.dp)
                     .verticalScroll(rememberScrollState()),
             ) {
                 Text(
                     text = if (logs.isEmpty()) stringResource(R.string.logs_empty) else logs.joinToString("\n"),
-                    style = MaterialTheme.typography.bodySmall,
+                    color = style.textPrimary,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
                 )
@@ -1213,14 +1704,18 @@ private fun LogDialog(
             Row {
                 if (logs.isNotEmpty()) {
                     IconButton(onClick = onCopy) {
-                        Icon(Icons.Rounded.ContentCopy, contentDescription = stringResource(R.string.cd_copy))
+                        Icon(
+                            Icons.Rounded.ContentCopy,
+                            contentDescription = stringResource(R.string.cd_copy),
+                            tint = style.textPrimary,
+                        )
                     }
                     TextButton(onClick = onClear) {
-                        Text(stringResource(R.string.btn_clear))
+                        Text(stringResource(R.string.btn_clear), color = style.textSecondary)
                     }
                 }
                 TextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.btn_close))
+                    Text(stringResource(R.string.btn_close), color = style.accentDot)
                 }
             }
         },
