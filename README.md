@@ -19,10 +19,6 @@
   <a href="https://github.com/MrMontic/wp2-apps">🎮 Apps & Games (wp2-apps)</a>
 </h3>
 
-<br>
-
-<img src="assets/themes-preview.png" alt="WP2 Sideloader Themes — CMF / Nothing, Liquid Glass, Nothing Light, AMOLED Stealth" width="100%">
-
 </div>
 
 ---
